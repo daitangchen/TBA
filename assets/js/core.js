@@ -261,12 +261,22 @@
     return sorted.slice(0, CFG.lineupSize);
   }
 
-  function simulateMatch(state, homeId, awayId) {
+  function simulateMatch(state, homeId, awayId, opts) {
     const home = state.teams.find(t => t.id === homeId);
     const away = state.teams.find(t => t.id === awayId);
     if (!home || !away) return null;
 
-    const startH = chooseLineup(state, home);
+    // 玩家手动指定的首发优先，否则按综合能力 + 体力自动排
+    let startH = null;
+    if (opts && Array.isArray(opts.homeLineup) && opts.homeLineup.length) {
+      const picked = opts.homeLineup.map(id => state.players[id]);
+      const legal = picked.length === CFG.lineupSize &&
+        picked.every(p => p && p.injury <= 0 && home.roster.indexOf(p.id) >= 0);
+      if (!legal) return null;
+      startH = picked;
+    } else {
+      startH = chooseLineup(state, home);
+    }
     const startA = chooseLineup(state, away);
     if (!startH || !startA) return null;
 
@@ -414,6 +424,8 @@
       scoreH, scoreA,
       winnerId, loserId: scoreH > scoreA ? awayId : homeId,
       boxH: rowsH, boxA: rowsA,
+      lineupH: startH.map(p => p.id),
+      lineupA: startA.map(p => p.id),
       plays: plays.slice(-14),
       mvp,
       stats: tstats,
@@ -701,6 +713,27 @@
     if (state.log.length > 60) state.log.length = 60;
   };
 
+  /**
+   * 老师点评：按日期轮值一位老师，从对应语境里取一句
+   * context: 'day' | 'win' | 'lose' | 'train' | 'rest'
+   * 只有「常规上学日」的 day 点评才返回内容（假期/留校没有课）
+   */
+  Game.teacherComment = function (state, context, dateStr, extra) {
+    const date = dateStr || state.date;
+    const info = calendar.dayInfo(date);
+    if (!info.inSeason) return null;
+    const isSchool = info.period && info.period.kind === 'school';
+    // 上课点评只出现在正常上学的非考试日
+    if (context === 'day' && (!isSchool || info.exam)) return null;
+    const teacherName = TBA.TEACHER_BY_WEEKDAY[info.weekday] || '秦始皇';
+    const teacher = TBA.TEACHERS.find(t => t.name === teacherName) || { name: teacherName, role: '' };
+    const table = TBA.TEACHER_LINES[teacherName] || {};
+    const lines = table[context] || [];
+    if (!lines.length) return null;
+    const idx = hash(date + '|' + context + '|' + (extra || '')) % lines.length;
+    return { name: teacher.name, role: teacher.role, text: lines[idx], date, isSchool };
+  };
+
   Game.create = function () {
     const players = buildPlayers();
     const state = {
@@ -796,21 +829,34 @@
   Game.previewMatch = function (state, opponentId) {
     const human = Game.humanTeam(state);
     const opp = Game.teamById(state, opponentId);
-    const mine = chooseLineup(state, human);
+    const roster = Game.rosterPlayers(state, human.id);
     const theirs = chooseLineup(state, opp);
-    return { human, opp, mine, theirs };
+    return { human, opp, roster, theirs };
   };
 
   Game.playableOpponents = function (state) {
     return state.teams.filter(t => !t.human && Game.canField(state, t.id));
   };
 
-  Game.playMatch = function (state, opponentId) {
+  // lineupIds 必须是 3 名、健康、且在本队名单里的球员
+  Game.checkLineup = function (state, lineupIds) {
+    if (!Array.isArray(lineupIds) || lineupIds.length !== CFG.lineupSize) return false;
+    if (new Set(lineupIds).size !== CFG.lineupSize) return false;
+    const human = Game.humanTeam(state);
+    return lineupIds.every(id => {
+      const p = state.players[id];
+      return p && p.injury <= 0 && human.roster.indexOf(id) >= 0;
+    });
+  };
+
+  Game.playMatch = function (state, opponentId, lineupIds) {
     if (!Game.canField(state, 'T1') || !Game.canField(state, opponentId)) return null;
-    const result = simulateMatch(state, 'T1', opponentId);
+    if (lineupIds !== undefined && lineupIds !== null && !Game.checkLineup(state, lineupIds)) return null;
+    const result = simulateMatch(state, 'T1', opponentId, { homeLineup: lineupIds || null });
     if (!result) return null;
     applyResult(state, result);
     state.lastResult = result;
+    state.lastLineup = result.lineupH.slice();
     const opp = Game.teamById(state, opponentId);
     const win = result.winnerId === 'T1';
     Game.log(
@@ -842,10 +888,12 @@
 
   Game.rest = function (state) {
     const human = Game.humanTeam(state);
+    const info = calendar.dayInfo(state.date);
     Game.rosterPlayers(state, human.id).forEach(p => {
       p.stamina = clamp(p.stamina + 6, 0, 100);
     });
-    Game.log(state, '全队休整，体力有所恢复。', 'rest');
+    // 假期里天天休息，不必每天都记一条动态
+    if (info.playable) Game.log(state, '全队休整，体力有所恢复。', 'rest');
     Game.advance(state);
     Game.save(state);
   };
@@ -892,7 +940,7 @@
     const info = calendar.dayInfo(state.date);
 
     // AI 之间的比赛
-    if (info.playable && !opts.quiet) {
+    if (info.playable) {
       const aiTeams = state.teams.filter(t => !t.human && Game.canField(state, t.id));
       if (aiTeams.length === 2 && Math.random() < CFG.aiMatchChance) {
         const r = simulateMatch(state, aiTeams[0].id, aiTeams[1].id);
@@ -902,12 +950,6 @@
           const t1 = Game.teamById(state, r.awayId).name;
           Game.log(state, `${t0} ${r.scoreH} : ${r.scoreA} ${t1}（AI 比赛）`, 'ai');
         }
-      }
-    } else if (info.playable && opts.quiet) {
-      const aiTeams = state.teams.filter(t => !t.human && Game.canField(state, t.id));
-      if (aiTeams.length === 2 && Math.random() < CFG.aiMatchChance) {
-        const r = simulateMatch(state, aiTeams[0].id, aiTeams[1].id);
-        if (r) applyResult(state, r);
       }
     }
 

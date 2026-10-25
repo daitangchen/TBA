@@ -405,6 +405,19 @@
       : '<span>本赛季已没有可打球的日子</span><b>—</b>';
   }
 
+  function teacherNoteHtml(comment, compact) {
+    if (!comment) return '';
+    const initial = comment.name.slice(0, 1);
+    return `<div class="teacher-note ${compact ? 'is-compact' : ''}">
+      <div class="tn-head">
+        <span class="tn-avatar">${esc(initial)}</span>
+        <div class="tn-meta"><b>${esc(comment.name)}</b><small>${esc(comment.role)}</small></div>
+        <span class="tn-tag">老师点评</span>
+      </div>
+      <p>“${esc(comment.text)}”</p>
+    </div>`;
+  }
+
   function renderDay(st, info) {
     const d = Cal.parseDate(st.date);
     const chips = [];
@@ -415,6 +428,9 @@
     }
     if (info.playLabel) chips.push(`<span class="chip chip-play">${esc(info.playLabel)}</span>`);
 
+    const isSchool = info.period && info.period.kind === 'school';
+    const comment = isSchool ? Game.teacherComment(st, 'day') : null;
+
     $('#day-panel').innerHTML = `
       <div class="day-head">
         <div>
@@ -424,7 +440,8 @@
         </div>
         <div class="day-status ${info.playable ? 'play' : ''}">${info.playable ? 'PLAY DAY' : 'NO GAME'}</div>
       </div>
-      <div class="day-reason">${esc(info.reason)}</div>`;
+      <div class="day-reason">${esc(info.reason)}</div>
+      ${teacherNoteHtml(comment)}`;
   }
 
   function renderActions(st, info) {
@@ -573,27 +590,70 @@
     const human = Game.humanTeam(st);
     const opp = Game.teamById(st, oppId);
     const preview = Game.previewMatch(st, oppId);
-    if (!preview.mine || !preview.theirs) return;
+    if (!preview.theirs || !preview.roster.length) return;
 
-    openModal(`${modalHead('赛前', `${Cal.labelDate(st.date)} · 3v3 · 先到 21 分`)}
-      <div class="matchup">
+    const roster = preview.roster.slice().sort((a, b) => b.overall - a.overall);
+    const selected = new Set();
+
+    const cardHtml = p => {
+      const hurt = p.injury > 0;
+      return `<button class="pick-card ${hurt ? 'is-injured' : ''}" data-pick="${p.id}" ${hurt ? 'disabled' : ''}>
+        <span class="pick-check">✓</span>
+        <span class="pick-ovr">${p.overall}</span>
+        <span class="pick-main">
+          <span class="pick-name">${esc(p.name)}</span>
+          <span class="pick-sub">${p.pos} · ${p.h}cm${hurt ? ` · 伤停 ${p.injury} 天` : ''}</span>
+        </span>
+        <span class="stamina ${staminaClass(p.stamina)}"><i style="width:${Math.max(4, p.stamina)}%"></i></span>
+      </button>`;
+    };
+
+    openModal(`${modalHead('赛前 · 选择首发', `${Cal.labelDate(st.date)} · 3v3 · 先到 21 分`)}
+      <div class="pick-head">
+        <h4>我的首发 <b id="pick-count">0 / 3</b></h4>
+        <span class="muted">每场比赛前都要重新点人，选满 3 人才能开球</span>
+      </div>
+      <div class="pick-grid" id="pick-grid">${roster.map(cardHtml).join('')}</div>
+      <div class="pick-opponent">
+        <span class="sb-vs">VS</span>
         <div class="lineup-col">
-          <h4>${esc(human.name)}</h4>
-          ${preview.mine.map(p => `<div class="lineup-player"><span class="lp-ovr">${p.overall}</span><span class="lp-name">${esc(p.name)}</span><span class="lp-pos">${p.pos}</span></div>`).join('')}
-        </div>
-        <div class="sb-vs">VS</div>
-        <div class="lineup-col">
-          <h4>${esc(opp.name)}</h4>
+          <h4>${esc(opp.name)} 预计首发</h4>
           ${preview.theirs.map(p => `<div class="lineup-player"><span class="lp-ovr">${p.overall}</span><span class="lp-name">${esc(p.name)}</span><span class="lp-pos">${p.pos}</span></div>`).join('')}
         </div>
       </div>
       <div class="modal-actions">
         <button class="btn btn-ghost" data-close="1">再想想</button>
-        <button class="btn btn-primary" id="btn-start-match">开球</button>
+        <button class="btn btn-primary" id="btn-start-match" disabled>还差 3 人</button>
       </div>`);
 
-    $('#btn-start-match').addEventListener('click', () => {
-      const result = Game.playMatch(st, oppId);
+    const modal = document.querySelector('#modal-root .modal');
+    if (!modal) return;
+    const grid = modal.querySelector('#pick-grid');
+    const countEl = modal.querySelector('#pick-count');
+    const startBtn = modal.querySelector('#btn-start-match');
+
+    grid.addEventListener('click', e => {
+      const card = e.target.closest('[data-pick]');
+      if (!card || card.disabled) return;
+      const id = Number(card.dataset.pick);
+      if (selected.has(id)) {
+        selected.delete(id);
+        card.classList.remove('is-selected');
+      } else {
+        if (selected.size >= 3) return;
+        selected.add(id);
+        card.classList.add('is-selected');
+      }
+      countEl.textContent = `${selected.size} / 3`;
+      countEl.classList.toggle('is-full', selected.size === 3);
+      startBtn.disabled = selected.size !== 3;
+      startBtn.textContent = selected.size === 3 ? '开球' : `还差 ${3 - selected.size} 人`;
+    });
+
+    startBtn.addEventListener('click', () => {
+      if (selected.size !== 3) return;
+      const ids = Array.from(selected);
+      const result = Game.playMatch(st, oppId, ids);
       if (!result) { closeModal(); render(); return; }
       showResult(result);
     });
@@ -604,6 +664,8 @@
     const home = Game.teamById(st, result.homeId);
     const away = Game.teamById(st, result.awayId);
     const humanWin = result.winnerId === 'T1';
+    const matchComment = Game.teacherComment(st, humanWin ? 'win' : 'lose', result.date);
+    const showComment = matchComment && matchComment.isSchool;
 
     const table = (team, rows) => `
       <div>
@@ -636,6 +698,7 @@
         </div>
       </div>
       <div style="text-align:center;margin-top:10px"><span class="sb-tag">本场 MVP · ${esc(result.mvp.name)}（${result.mvp.pts} 分 ${result.mvp.reb} 板）</span></div>
+      ${showComment ? teacherNoteHtml(matchComment, true) : ''}
       <div class="box-grid">
         ${table(home, result.boxH)}
         ${table(away, result.boxA)}
@@ -643,7 +706,7 @@
       <div class="play-log">
         ${result.plays.map(p => `<div><span class="score">${p.score}</span><span>${esc(p.text)}</span></div>`).join('')}
       </div>
-      <div class="modal-actions">
+      <div class="modal-actions is-sticky">
         <button class="btn btn-primary" id="btn-result-close">继续</button>
       </div>`, { wide: true, onClose: render });
 
@@ -703,7 +766,7 @@
           <li>三支球队分为 A / B / C 三个批次，优先级依次递减；批次由最近一次比赛结果决定，输得最多的拿 A。</li>
           <li>选秀顺序：<code>ABC ABC BCA CAB</code>，共 12 个签位，每队 4 人。</li>
           <li>锁定：选秀前可锁定上一轮自己的一名球员，至多一人，不能是上一轮自己的第一顺位；锁定后该球员充当本轮第一顺位。</li>
-          <li>交易市场：v1.1.2 暂未实现，排在后续版本计划里。</li>
+          <li>交易市场：v1.1.3 暂未实现，排在后续版本计划里。</li>
         </ul>
         <h4>三、比赛</h4>
         <ul>
@@ -945,6 +1008,48 @@
           Game.save(st);
           render();
           draftComplete();
+          return;
+        }
+
+        const skipToSchool = requirePlayable => {
+          let guard = 0;
+          while (st.phase === 'season' && guard++ < 400) {
+            const info = Cal.dayInfo(st.date);
+            const isSchool = info.period && info.period.kind === 'school';
+            const weekday = info.weekday >= 1 && info.weekday <= 5;
+            if (isSchool && weekday && (!requirePlayable || info.playable)) break;
+            Game.rest(st);
+          }
+        };
+
+        if (demo === 'school') {
+          skipToSchool(true);
+          Game.save(st);
+          render();
+          return;
+        }
+
+        if (demo === 'lineup') {
+          skipToSchool(true);
+          Game.save(st);
+          render();
+          const opps = Game.playableOpponents(st);
+          if (opps.length) openMatchPreview(opps[0].id);
+          return;
+        }
+
+        if (demo === 'schoolmatch') {
+          skipToSchool(true);
+          const opps = Game.playableOpponents(st);
+          const ids = Game.rosterPlayers(st, 'T1')
+            .filter(p => p.injury <= 0)
+            .sort((a, b) => b.overall - a.overall)
+            .slice(0, 3)
+            .map(p => p.id);
+          const result = opps.length ? Game.playMatch(st, opps[0].id, ids) : null;
+          Game.save(st);
+          render();
+          if (result) showResult(result);
           return;
         }
 

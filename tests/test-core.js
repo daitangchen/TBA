@@ -111,5 +111,56 @@ check('触发中期选秀', drafts === 1, drafts);
 check('赛季有足够比赛', matches > 60, matches);
 Game.standings(s3).forEach(t => console.log(`${t.name}\t${t.wins}胜${t.losses}负\t${t.pf}:${t.pa}`));
 
+/* ---------- 6. 赛前手动选人 ---------- */
+console.log('\n=== 赛前手动选人 ===');
+const s4 = Game.create();
+quickDraft(s4);
+const humanTeam = s4.teams.find(t => t.human);
+const healthy = Game.rosterPlayers(s4, humanTeam.id).filter(p => p.injury <= 0);
+const ids = healthy.slice(0, 3).map(p => p.id);
+check('三人首发合法', Game.checkLineup(s4, ids) === true);
+check('两人首发不合法', Game.checkLineup(s4, ids.slice(0, 2)) === false);
+check('四人首发不合法', Game.checkLineup(s4, ids.concat([healthy[3].id])) === false);
+check('重复球员不合法', Game.checkLineup(s4, [ids[0], ids[0], ids[2]]) === false);
+check('名单外球员不合法', Game.checkLineup(s4, ids.slice(0, 2).concat([99])) === false);
+
+// 伤员不能上
+const victim = healthy[0];
+victim.injury = 2;
+check('伤员首发不合法', Game.checkLineup(s4, [victim.id, ids[1], ids[2]]) === false);
+check('带伤员开赛被拒绝', Game.playMatch(s4, 'T2', [victim.id, ids[1], ids[2]]) === null);
+victim.injury = 0;
+
+const r4 = Game.playMatch(s4, 'T2', ids);
+check('手动首发开赛成功', !!r4);
+check('比赛结果记录首发', !!r4 && r4.lineupH.join(',') === ids.join(','), r4 && r4.lineupH.join(','));
+check('只有选中的三人有数据', !!r4 && r4.boxH.filter(x => ids.indexOf(x.id) >= 0).length === 3);
+
+const r4b = (() => { const s = Game.create(); quickDraft(s); return { s }; })();
+check('不传首发时自动排阵', (() => {
+  const s = r4b.s;
+  const auto = Game.playMatch(s, 'T2');
+  return !!auto && Array.isArray(auto.lineupH) && auto.lineupH.length === 3;
+})());
+
+/* ---------- 7. 老师点评 ---------- */
+console.log('\n=== 老师点评 ===');
+const s5 = Game.create();
+quickDraft(s5);
+check('假期（暑假）没有上课点评', Game.teacherComment(s5, 'day', '2025-07-15') === null);
+check('留校日没有上课点评', Game.teacherComment(s5, 'day', '2025-07-03') === null);
+check('考试周没有上课点评', Game.teacherComment(s5, 'day', '2025-10-30') === null);
+const c1 = Game.teacherComment(s5, 'day', '2025-09-02');
+check('上学日有老师点评', !!c1 && !!c1.text, c1 && `${c1.name}：${c1.text}`);
+check('同一天点评稳定', !!c1 && c1.text === Game.teacherComment(s5, 'day', '2025-09-02').text);
+check('周二轮到嘴老师', c1 && c1.name === '嘴老师', c1 && c1.name);
+const cWin = Game.teacherComment(s5, 'win', '2025-09-02');
+const cLose = Game.teacherComment(s5, 'lose', '2025-09-02');
+check('赛后输赢点评不同', !!cWin && !!cLose && cWin.text !== cLose.text);
+Object.keys(TBA.TEACHER_LINES).forEach(name => {
+  const t = TBA.TEACHER_LINES[name];
+  check(`${name} 有 day/win/lose 台词`, !!(t.day && t.day.length >= 4 && t.win && t.win.length && t.lose && t.lose.length));
+});
+
 console.log('\n' + (failures === 0 ? '全部通过 ✅' : failures + ' 项失败 ❌'));
 process.exit(failures === 0 ? 0 : 1);

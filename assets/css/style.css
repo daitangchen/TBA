@@ -865,6 +865,94 @@ b, strong { font-weight: 700; }
   border-top: 1px solid var(--line);
 }
 
+/* 赛前选人 */
+.pick-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 10px; flex-wrap: wrap; }
+.pick-head h4 { font-size: 14px; letter-spacing: 0.06em; display: flex; align-items: center; gap: 8px; }
+.pick-head h4 b { font-family: var(--mono); color: var(--orange-2); font-size: 13px; }
+.pick-head h4 b.is-full { color: var(--green); }
+.pick-head .muted { font-size: 11.5px; }
+.pick-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.pick-card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.025);
+  text-align: left;
+  transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease;
+}
+.pick-card:hover:not(:disabled) { border-color: rgba(255, 176, 32, 0.5); transform: translateY(-1px); }
+.pick-card.is-selected { border-color: var(--orange); background: rgba(255, 122, 24, 0.10); box-shadow: 0 0 0 1px rgba(255, 122, 24, 0.25) inset; }
+.pick-card.is-injured { opacity: 0.45; cursor: not-allowed; }
+.pick-check {
+  width: 20px;
+  height: 20px;
+  flex: none;
+  border-radius: 6px;
+  border: 1px solid var(--line-strong);
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  color: transparent;
+}
+.pick-card.is-selected .pick-check { background: var(--orange); border-color: transparent; color: #1a0c00; }
+.pick-ovr { font-family: var(--mono); font-weight: 800; color: var(--orange-2); width: 24px; flex: none; }
+.pick-main { display: flex; flex-direction: column; min-width: 0; }
+.pick-name { font-weight: 700; font-size: 13.5px; }
+.pick-sub { font-size: 10.5px; color: var(--dim); }
+.pick-card .stamina { margin-left: auto; width: 44px; flex: none; }
+.pick-opponent {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px dashed var(--line);
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+.pick-opponent .lineup-col { flex: 1; min-width: 0; }
+
+/* 老师点评 */
+.teacher-note {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(106, 168, 255, 0.22);
+  background: linear-gradient(135deg, rgba(106, 168, 255, 0.09), rgba(47, 227, 200, 0.04));
+}
+.teacher-note.is-compact { margin-top: 12px; }
+.tn-head { display: flex; align-items: center; gap: 10px; }
+.tn-avatar {
+  width: 32px;
+  height: 32px;
+  flex: none;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  font-weight: 800;
+  font-size: 15px;
+  color: #cfe0ff;
+  background: linear-gradient(150deg, #3b4a68, #1b2437);
+  border: 1px solid rgba(106, 168, 255, 0.25);
+}
+.tn-meta { display: flex; flex-direction: column; line-height: 1.2; }
+.tn-meta b { font-size: 13px; }
+.tn-meta small { font-size: 10.5px; color: var(--dim); }
+.tn-tag {
+  margin-left: auto;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  color: var(--blue);
+  border: 1px solid rgba(106, 168, 255, 0.35);
+  padding: 2px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.teacher-note p { margin-top: 8px; font-size: 13px; color: var(--muted); line-height: 1.7; }
+.teacher-note.is-compact p { font-size: 12.5px; }
+
 /* 阵容预览 */
 .matchup { display: grid; grid-template-columns: 1fr auto 1fr; gap: 14px; align-items: center; }
 .lineup-col { display: flex; flex-direction: column; gap: 8px; }
@@ -961,6 +1049,8 @@ b, strong { font-weight: 700; }
   .action-btn { padding: 12px; gap: 10px; }
   .action-btn > span { min-width: 0; }
   .day-status { font-size: 11px; padding: 5px 10px; }
+  .pick-grid { grid-template-columns: 1fr; }
+  .pick-opponent { flex-direction: column; }
   .pool-grid { grid-template-columns: 1fr 1fr; }
   .player-card { padding: 10px; }
   .pc-name { font-size: 15px; }
