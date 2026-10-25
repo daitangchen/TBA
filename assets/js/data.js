@@ -3,13 +3,13 @@
  * 数据来源：
  *   - 球员信息表.et（22 名球员 + 6 位老师）
  *   - schedule.md（2025.7.2 - 2026.6.9 的赛历与打球日规则）
- *   - rules.png（建队核心 / 选秀 / 交易市场规则）
+ *   - rules.png（建队核心 / 联盟规则参考）
  */
 (function (global) {
   'use strict';
   const TBA = (global.TBA = global.TBA || {});
 
-  TBA.VERSION = '1.1.3';
+  TBA.VERSION = '1.1.5';
   TBA.TITLE = 'TBA 模拟器';
 
   /* ============================================================
@@ -237,8 +237,8 @@
     lineupSize: 3,           // 3v3
     winScore: 21,            // 先到 21 分且领先 2 分
     maxPossessions: 240,     // 安全上限
-    draftRounds: 4,          // 每队 4 个签位（第一至第四顺位）
-    secondDraftDate: '2026-02-05',
+    poolSize: 15,            // 每场比赛到场人数（含领袖）
+    picksPerTeam: 5,         // 每位领袖本轮选的人数（加上自己共 6 人）
     staminaStart: 100,
     staminaRest: 16,         // 每天恢复
     staminaTrain: 8,         // 训练消耗
@@ -249,13 +249,6 @@
     aiMatchChance: 0.45      // 可打球日 AI 互打的概率
   };
 
-  /* 选秀顺序：ABC ABC BCA CAB（见 rules.png 图一底部） */
-  TBA.DRAFT_ORDER = ['A', 'B', 'C', 'A', 'B', 'C', 'B', 'C', 'A', 'C', 'A', 'B'];
-
-  /* 批次参考表（rules.png 表格，用于界面展示） */
-  TBA.DRAFT_TABLE = {
-    A: [1, 2, 2, 3],
-    B: [2, 1, 3, 2],
-    C: [3, 3, 1, 1]
-  };
+  /* 客串球员只在考试期间到场 */
+  TBA.GUEST_ROLE = '客串球员';
 })(typeof window !== 'undefined' ? window : globalThis);

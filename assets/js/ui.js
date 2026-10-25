@@ -5,7 +5,6 @@
   'use strict';
   const TBA = global.TBA;
   const Game = TBA.game;
-  const Draft = TBA.draft;
   const Cal = TBA.calendar;
   const CFG = TBA.CONFIG;
   const ATTR_CN = TBA.ATTR_CN;
@@ -19,9 +18,8 @@
   const UI = {
     calMonth: null,
     lastDate: null,
-    draftTimer: null,
-    draftBusy: false,
-    summaryShown: false
+    buildTimer: null,
+    buildBusy: false
   };
 
   /* ============================================================
@@ -37,7 +35,6 @@
   function render() {
     const st = Game.state;
     if (!st) { show('screen-title'); renderTitle(); return; }
-    if (st.phase === 'draft') { show('screen-draft'); renderDraft(); runDraft(); return; }
     if (st.phase === 'end') { show('screen-end'); renderEnd(); return; }
     show('screen-main');
     renderMain();
@@ -130,7 +127,7 @@
     $('#btn-continue').hidden = !has;
     $('#save-hint').textContent = has
       ? '检测到本地存档，可以继续上次的赛季。'
-      : '第一次踏上球场？先从选秀大会开始。';
+      : '高三的第一场球，从到场的人里开始选。';
     const s = seasonStats();
     const strip = $('#season-strip');
     if (strip && !strip.dataset.ready) {
@@ -140,185 +137,6 @@
         <div><b>22</b><span>名球员</span></div>`;
       strip.dataset.ready = '1';
     }
-  }
-
-  /* ============================================================
-   * 选秀页
-   * ============================================================ */
-  function renderDraft() {
-    const st = Game.state;
-    const d = st.draft;
-    if (!d) return;
-    UI.summaryShown = false;
-
-    $('#draft-eyebrow').textContent = `${Cal.labelDate(st.date)} · ${d.round === 1 ? '建队选秀' : '中期选秀'}`;
-    $('#draft-title').textContent = d.round === 1 ? '选秀大会' : '中期选秀大会';
-
-    const human = st.teams.find(t => t.human);
-    $('#draft-batches').innerHTML = ['A', 'B', 'C'].map(b => {
-      const tid = d.batches[b];
-      const team = st.teams.find(t => t.id === tid);
-      return `<div class="batch-pill ${team.human ? 'is-human' : ''}">
-        <b>${b}</b>
-        <div><span>${esc(team.name)}</span><small>${team.human ? '你的顺位批次' : (d.round === 2 ? '按战绩分配' : '抽签结果')}</small></div>
-      </div>`;
-    }).join('');
-
-    $('#draft-counter').textContent = `${d.picks.length} / ${d.seq.length} 签`;
-
-    // 选秀顺位记录
-    const slot = Draft.currentSlot(st);
-    const logEl = $('#draft-log');
-    const entries = d.log.map(x => {
-      const team = st.teams.find(t => t.id === x.teamId);
-      return `<li class="pick-entry ${x.locked ? 'is-locked' : ''}">
-        <span class="pick-no">${x.pickNo}</span>
-        <span class="chip">${x.batch || (x.text.match(/\[(.)\]/) || [])[1] || '?'}</span>
-        <span class="pick-team">${esc(team.name)}</span>
-        <span class="pick-player">${esc(st.players[x.playerId].name)}</span>
-      </li>`;
-    });
-    if (slot) {
-      const team = st.teams.find(t => t.id === slot.teamId);
-      const who = d.stage === 'lock' ? '选秀尚未开始' : (team.human ? '轮到你了' : '选择中…');
-      entries.push(`<li class="pick-entry is-current">
-        <span class="pick-no">${d.picks.length + 1}</span>
-        <span class="chip">${slot.batch}</span>
-        <span class="pick-team">${esc(team.name)}</span>
-        <span class="pick-player">${who}</span>
-      </li>`);
-    }
-    logEl.innerHTML = entries.join('');
-    logEl.scrollTop = logEl.scrollHeight;
-
-    // 锁定阶段
-    const lockEl = $('#draft-lockpanel');
-    if (d.stage === 'lock') {
-      const prevIds = ((d.previous && d.previous.rosterAfter && d.previous.rosterAfter[human.id]) || []);
-      const banned = d.previous ? d.previous.firstPick[human.id] : null;
-      const allowed = prevIds.filter(id => id !== banned);
-      lockEl.innerHTML = `<div class="panel lock-panel">
-        <h3 class="panel-title">锁定球员 <span class="muted">可选 0—1 人</span></h3>
-        <p class="muted" style="font-size:12px;line-height:1.6">锁定上一轮自己阵中的一名球员，他会在本轮直接充当你的第一顺位。</p>
-        <div class="lock-list">
-          ${allowed.map(id => {
-            const p = st.players[id];
-            return `<button class="lock-btn" data-lock="${id}">
-              <span class="roster-ovr">${p.overall}</span>
-              <span><b>${esc(p.name)}</b><br /><small class="muted">${p.pos} · ${p.h}cm</small></span>
-              <span style="margin-left:auto" class="muted">锁定</span>
-            </button>`;
-          }).join('')}
-          ${banned ? `<div class="muted" style="font-size:11px">上一轮第一顺位 ${esc(st.players[banned].name)} 不可锁定</div>` : ''}
-        </div>
-        <button class="btn btn-ghost btn-block" data-lock="0">放弃锁定，按正常顺位选</button>
-      </div>`;
-    } else {
-      lockEl.innerHTML = '';
-    }
-
-    // 球员池
-    const poolEl = $('#draft-pool');
-    const isHumanTurn = d.stage === 'pick' && slot && st.teams.find(t => t.id === slot.teamId).human;
-    $('#pool-count').textContent = `${d.pool.length} 人待选`;
-    $('#pool-legend').innerHTML = d.stage === 'lock'
-      ? '<span class="chip chip-live">锁定阶段 · 先做决定</span>'
-      : isHumanTurn
-        ? '<span class="chip chip-live">轮到你了，点击选择</span>'
-        : '<span class="chip">等待其他球队选择…</span>';
-
-    if (d.stage === 'lock') {
-      poolEl.innerHTML = `<div class="panel" style="grid-column:1/-1;text-align:center;padding:40px 20px">
-        <h3 style="margin-bottom:8px">先决定是否锁定球员</h3>
-        <p class="muted">规则：至多锁定一名，且不能是上一轮自己的第一顺位。</p>
-      </div>`;
-    } else {
-      const list = d.pool.map(id => st.players[id]).sort((a, b) => b.overall - a.overall);
-      poolEl.innerHTML = list.map(p => playerCard(p, !isHumanTurn)).join('');
-    }
-
-    // 我的阵容（锁定阶段显示上一轮阵容）
-    const rosterIds = d.stage === 'lock' && d.previous
-      ? [human.core].concat((d.previous.rosterAfter && d.previous.rosterAfter[human.id]) || [])
-      : human.roster;
-    $('#draft-roster').innerHTML = (d.stage === 'lock'
-      ? '<div class="muted" style="font-size:11px;margin-bottom:6px">上一轮阵容（待重建）</div>'
-      : '') + rosterIds.map(id => {
-      const p = st.players[id];
-      return `<div class="mini-player">
-        <span class="mini-ovr">${p.overall}</span>
-        <div><div class="mini-name">${esc(p.name)}</div><small class="muted">${p.pos} · ${p.h}cm</small></div>
-        <span class="mini-pos">${p.core ? '核心' : ''}</span>
-      </div>`;
-    }).join('');
-  }
-
-  function runDraft() {
-    const st = Game.state;
-    if (!st || st.phase !== 'draft' || !st.draft) return;
-    if (st.draft.stage === 'lock') return;
-    const slot = Draft.currentSlot(st);
-    if (!slot) {
-      // 已经没有签位：让状态机执行最后一步 finishDraft
-      // （分配阵容、随机补位、把阶段切到 season），否则会卡在选秀页
-      if (st.draft) Draft.step(st);
-      Game.save(st);
-      draftComplete();
-      return;
-    }
-    const team = st.teams.find(t => t.id === slot.teamId);
-    if (team.human) return;
-    if (UI.draftBusy) return;
-    UI.draftBusy = true;
-    clearTimeout(UI.draftTimer);
-    UI.draftTimer = setTimeout(() => {
-      UI.draftBusy = false;
-      const rnd = Draft.step(st);
-      Game.save(st);
-      if (rnd.type === 'done' || st.phase !== 'draft') { draftComplete(); return; }
-      renderDraft();
-      runDraft();
-    }, 380);
-  }
-
-  function draftComplete() {
-    const st = Game.state;
-    if (UI.summaryShown) return;
-    UI.summaryShown = true;
-    const lastDraft = st.draftHistory[st.draftHistory.length - 1] || { bonus: [] };
-    const bonusMap = {};
-    (lastDraft.bonus || []).forEach(b => { bonusMap[b.playerId] = true; });
-
-    const rows = st.teams.map(t => `
-      <div class="sum-team">
-        <div class="sum-head">
-          <b>${esc(t.name)}</b>
-          <span class="muted">${t.roster.length} 人</span>
-        </div>
-        <div class="sum-chips">
-          ${t.roster.map(id => {
-            const p = st.players[id];
-            const cls = p.core ? 'is-core' : bonusMap[p.id] ? 'is-bonus' : '';
-            const tag = p.core ? '核心' : bonusMap[p.id] ? '随机补位' : '';
-            return `<div class="sum-chip ${cls}">
-              <span class="ovr">${p.overall}</span>
-              <span class="nm">${esc(p.name)}</span>
-              ${tag ? `<em>${tag}</em>` : ''}
-            </div>`;
-          }).join('')}
-        </div>
-      </div>`).join('');
-
-    openModal(`${modalHead('选秀大会结束', '建队核心 + 4 个顺位 + 1 个随机补位，每队 6 人')}
-      ${rows}
-      <div class="modal-actions is-sticky">
-        <button class="btn btn-primary" id="btn-draft-done">进入赛季</button>
-      </div>`, { wide: true, onClose: render });
-    const btn = $('#btn-draft-done');
-    if (btn) btn.addEventListener('click', () => {
-      closeModal();
-      render();
-    });
   }
 
   /* ============================================================
@@ -446,8 +264,7 @@
 
   function renderActions(st, info) {
     const el = $('#actions-panel');
-    const human = Game.humanTeam(st);
-    const canPlay = Game.canField(st, human.id);
+    const canPlay = Game.canStartMatch(st);
     const opponents = Game.playableOpponents(st);
     const rows = [];
 
@@ -455,31 +272,26 @@
       if (!canPlay) {
         rows.push(`<div class="action-row"><button class="action-btn" disabled>
           <span class="action-ico">🚑</span>
-          <span><span class="action-main">阵容不整</span><span class="action-sub">健康球员不足 3 人，先让伤员恢复</span></span>
-        </button></div>`);
-      } else if (!opponents.length) {
-        rows.push(`<div class="action-row"><button class="action-btn" disabled>
-          <span class="action-ico">⏳</span>
-          <span><span class="action-main">对手阵容不整</span><span class="action-sub">另外两支球队都凑不齐 3 人，先训练吧</span></span>
+          <span><span class="action-main">人不够</span><span class="action-sub">健康球员不足 12 人，先让大家恢复</span></span>
         </button></div>`);
       } else {
         opponents.forEach(opp => {
           rows.push(`<div class="action-row"><button class="action-btn" data-match="${opp.id}">
             <span class="action-ico">🏀</span>
             <span><span class="action-main">约战 ${esc(opp.name)}</span>
-            <span class="action-sub">${opp.wins} 胜 ${opp.losses} 负 · 3v3 · 先到 21 分</span></span>
+            <span class="action-sub">${opp.wins} 胜 ${opp.losses} 负 · 现场 15 人组队 · 3v3</span></span>
             <span class="action-arrow">›</span>
           </button></div>`);
         });
       }
       rows.push(`<div class="action-row"><button class="action-btn" data-train="1">
         <span class="action-ico">🎯</span>
-        <span><span class="action-main">全队训练</span><span class="action-sub">选择一个属性，全队 +1（有几率 +2）</span></span>
+        <span><span class="action-main">全班加练</span><span class="action-sub">选择一个属性，到场球员 +1（有几率 +2）</span></span>
         <span class="action-arrow">›</span>
       </button></div>`);
       rows.push(`<div class="action-row"><button class="action-btn" data-rest="1">
         <span class="action-ico">😴</span>
-        <span><span class="action-main">今天不打了</span><span class="action-sub">全队休息，体力 +6，推进到明天</span></span>
+        <span><span class="action-main">今天不打了</span><span class="action-sub">大家休息，体力 +6，推进到明天</span></span>
         <span class="action-arrow">›</span>
       </button></div>`);
     } else {
@@ -502,23 +314,27 @@
 
   function renderTeamPanel(st) {
     const human = Game.humanTeam(st);
-    const players = Game.rosterPlayers(st, human.id).sort((a, b) => b.overall - a.overall);
+    const last = Game.lastTeamPlayers(st).sort((a, b) => b.overall - a.overall);
+    const body = last.length
+      ? `<div class="roster-list">
+          ${last.map(p => `
+            <div class="roster-row" data-player="${p.id}">
+              <span class="roster-ovr">${p.overall}</span>
+              <div>
+                <div class="roster-name">${esc(p.name)} ${p.injury > 0 ? `<span class="injury-tag">伤 ${p.injury}天</span>` : ''}</div>
+                <div style="font-size:10.5px;color:var(--dim)">${p.pos} · ${p.h}cm</div>
+              </div>
+              <div class="stamina ${staminaClass(p.stamina)}" title="体力 ${Math.round(p.stamina)}"><i style="width:${Math.max(4, p.stamina)}%"></i></div>
+            </div>`).join('')}
+        </div>
+        <div class="muted" style="font-size:11px;margin-top:10px">上一场出场阵容 · 下一场重新选人</div>`
+      : `<div class="muted" style="font-size:12px;line-height:1.7">还没有打过比赛。<br />每个可打球日都可以约战，比赛前从到场的 15 人里临时组队。</div>`;
     $('#team-panel').innerHTML = `
       <div class="team-head">
         <div class="team-name">${esc(human.name)}</div>
         <div class="team-record">${human.wins} 胜 ${human.losses} 负</div>
       </div>
-      <div class="roster-list">
-        ${players.map(p => `
-          <div class="roster-row" data-player="${p.id}">
-            <span class="roster-ovr">${p.overall}</span>
-            <div>
-              <div class="roster-name">${esc(p.name)} ${p.injury > 0 ? `<span class="injury-tag">伤 ${p.injury}天</span>` : ''}</div>
-              <div style="font-size:10.5px;color:var(--dim)">${p.pos} · ${p.h}cm</div>
-            </div>
-            <div class="stamina ${staminaClass(p.stamina)}" title="体力 ${Math.round(p.stamina)}"><i style="width:${Math.max(4, p.stamina)}%"></i></div>
-          </div>`).join('')}
-      </div>`;
+      ${body}`;
   }
 
   function renderStandings(st) {
@@ -578,85 +394,171 @@
       </div>
       <div class="timeline">${segs}${exams}<i class="marker" style="left:${todayPct.toFixed(2)}%"></i></div>
       <div class="timeline-labels">
-        <span>2025.07.02 开局</span><span>2026.02.05 中期选秀</span><span>2026.06.09 赛季结束</span>
+        <span>2025.07.02 高三开局</span><span>2026.02 寒假冲刺</span><span>2026.06.09 高考收官</span>
       </div>`;
   }
 
   /* ============================================================
    * 交互：比赛 / 训练 / 休息
    * ============================================================ */
-  function openMatchPreview(oppId) {
+  /* ============================================================
+   * 赛前组队：每场从到场 15 人里轮流选 5 人
+   * ============================================================ */
+  function openTeamBuilder(oppId) {
     const st = Game.state;
     const human = Game.humanTeam(st);
     const opp = Game.teamById(st, oppId);
-    const preview = Game.previewMatch(st, oppId);
-    if (!preview.theirs || !preview.roster.length) return;
+    if (!human || !opp) return;
 
-    const roster = preview.roster.slice().sort((a, b) => b.overall - a.overall);
-    const selected = new Set();
+    const info = Cal.dayInfo(st.date);
+    const exam = !!info.exam;
+    const pool = Game.buildPool(st);
+    const summary = Game.poolSummary(pool);
+    const leaders = [human.core, opp.core];
+    const candidates = pool.filter(p => leaders.indexOf(p.id) < 0);
+
+    if (candidates.length < CFG.picksPerTeam * 2) {
+      openModal(`${modalHead('人到齐了吗？', '到场球员不足')}
+        <p class="muted">今天只来了 ${pool.length} 个人，凑不齐一场 3v3。先训练或者换一天吧。</p>
+        <div class="modal-actions"><button class="btn btn-primary" data-close="1">知道了</button></div>`);
+      return;
+    }
+
+    const rosters = {};
+    rosters[human.id] = [human.core];
+    rosters[opp.id] = [opp.core];
+
+    const first = Math.random() < 0.5 ? human.id : opp.id;
+    const turns = [];
+    for (let i = 0; i < CFG.picksPerTeam * 2; i++) {
+      turns.push(i % 2 === 0 ? first : (first === human.id ? opp.id : human.id));
+    }
+    let turn = 0;
+    const taken = new Set();
+    let busy = false;
+
+    const isHumanTurn = () => turns[turn] === human.id;
+    const done = () => turn >= turns.length;
+    const picksOf = teamId => rosters[teamId].length - 1;
+
+    const slotsHtml = teamId => {
+      const ids = rosters[teamId];
+      const leader = st.players[ids[0]];
+      const out = [`<div class="slot is-leader"><span class="slot-ovr">${leader.overall}</span><span class="slot-name">${esc(leader.name)}</span><em>领袖</em></div>`];
+      for (let i = 0; i < CFG.picksPerTeam; i++) {
+        const id = ids[i + 1];
+        if (id) {
+          const p = st.players[id];
+          out.push(`<div class="slot is-filled"><span class="slot-ovr">${p.overall}</span><span class="slot-name">${esc(p.name)}</span><em>${p.pos === '锋线' ? '锋' : '卫'}</em></div>`);
+        } else {
+          out.push('<div class="slot is-empty"><span>待选</span></div>');
+        }
+      }
+      return out.join('');
+    };
 
     const cardHtml = p => {
-      const hurt = p.injury > 0;
-      return `<button class="pick-card ${hurt ? 'is-injured' : ''}" data-pick="${p.id}" ${hurt ? 'disabled' : ''}>
-        <span class="pick-check">✓</span>
+      const enabled = isHumanTurn() && !busy && !done();
+      return `<button class="pick-card" data-pool="${p.id}" ${enabled ? '' : 'disabled'}>
         <span class="pick-ovr">${p.overall}</span>
         <span class="pick-main">
           <span class="pick-name">${esc(p.name)}</span>
-          <span class="pick-sub">${p.pos} · ${p.h}cm${hurt ? ` · 伤停 ${p.injury} 天` : ''}</span>
+          <span class="pick-sub">${p.pos} · ${p.h}cm · 体力 ${Math.round(p.stamina)}</span>
         </span>
-        <span class="stamina ${staminaClass(p.stamina)}"><i style="width:${Math.max(4, p.stamina)}%"></i></span>
+        ${p.role === TBA.GUEST_ROLE ? '<em class="slot-tag">客串</em>' : ''}
       </button>`;
     };
 
-    openModal(`${modalHead('赛前 · 选择首发', `${Cal.labelDate(st.date)} · 3v3 · 先到 21 分`)}
-      <div class="pick-head">
-        <h4>我的首发 <b id="pick-count">0 / 3</b></h4>
-        <span class="muted">每场比赛前都要重新点人，选满 3 人才能开球</span>
+    const renderBody = () => {
+      const modal = document.querySelector('#modal-root .modal');
+      if (!modal) return;
+      modal.querySelector('#slots-human').innerHTML = slotsHtml(human.id);
+      modal.querySelector('#slots-ai').innerHTML = slotsHtml(opp.id);
+      const remain = pool.filter(p => !taken.has(p.id) && leaders.indexOf(p.id) < 0);
+      modal.querySelector('#pool-count').textContent = `还剩 ${remain.length} 人可选`;
+      modal.querySelector('#pool-grid').innerHTML = remain.map(cardHtml).join('');
+
+      const turnEl = modal.querySelector('#build-turn');
+      if (done()) turnEl.innerHTML = '<b class="is-ready">双方阵容已满，可以开球</b>';
+      else if (isHumanTurn()) turnEl.innerHTML = `轮到你选人 <b>还差 ${CFG.picksPerTeam - picksOf(human.id)} 人</b>`;
+      else turnEl.innerHTML = `${esc(opp.name)} 选择中…`;
+
+      const btn = modal.querySelector('#btn-start-match');
+      btn.disabled = !done();
+      btn.textContent = done() ? '开球' : (isHumanTurn() ? `还差 ${CFG.picksPerTeam - picksOf(human.id)} 人` : '等待对方选人…');
+    };
+
+    const aiStep = () => {
+      if (done()) return;
+      if (turns[turn] !== opp.id) return;
+      busy = true;
+      renderBody();
+      setTimeout(() => {
+        const remain = pool.filter(p => !taken.has(p.id) && leaders.indexOf(p.id) < 0);
+        const pick = Game.aiPick(st, remain, rosters[opp.id]);
+        if (pick) {
+          rosters[opp.id].push(pick.id);
+          taken.add(pick.id);
+          turn++;
+        }
+        busy = false;
+        renderBody();
+        if (!done() && turns[turn] !== human.id) aiStep();
+      }, 520);
+    };
+
+    openModal(`${modalHead('赛前组队', `${Cal.labelDate(st.date)} · 3v3 · 先到 21 分`)}
+      <div class="build-meta">
+        <span class="chip ${exam ? 'chip-exam' : 'chip-school'}">${exam ? '考试期间 · 客串球员到场' : '常规到场'}</span>
+        <span class="muted">今天来了 ${summary.total} 人：锋线 ${summary.forwards} · 后卫 ${summary.guards}${summary.guests ? `（含客串 ${summary.guests}）` : ''}</span>
       </div>
-      <div class="pick-grid" id="pick-grid">${roster.map(cardHtml).join('')}</div>
-      <div class="pick-opponent">
-        <span class="sb-vs">VS</span>
-        <div class="lineup-col">
-          <h4>${esc(opp.name)} 预计首发</h4>
-          ${preview.theirs.map(p => `<div class="lineup-player"><span class="lp-ovr">${p.overall}</span><span class="lp-name">${esc(p.name)}</span><span class="lp-pos">${p.pos}</span></div>`).join('')}
+      <div class="build-teams">
+        <div class="build-team">
+          <div class="build-team-head"><b>${esc(human.name)}</b><span class="chip chip-live">你 · ${first === human.id ? '先选' : '后选'}</span></div>
+          <div class="build-slots" id="slots-human"></div>
+        </div>
+        <div class="build-vs">VS</div>
+        <div class="build-team">
+          <div class="build-team-head"><b>${esc(opp.name)}</b><span class="muted">${first === opp.id ? '先选' : '后选'}</span></div>
+          <div class="build-slots" id="slots-ai"></div>
         </div>
       </div>
-      <div class="modal-actions">
-        <button class="btn btn-ghost" data-close="1">再想想</button>
-        <button class="btn btn-primary" id="btn-start-match" disabled>还差 3 人</button>
-      </div>`);
+      <div class="build-turn" id="build-turn"></div>
+      <div class="pool-head"><h3 class="panel-title">现场球员 <span class="muted" id="pool-count"></span></h3></div>
+      <div class="pick-grid" id="pool-grid"></div>
+      <div class="modal-actions is-sticky">
+        <button class="btn btn-ghost" data-close="1">取消</button>
+        <button class="btn btn-primary" id="btn-start-match" disabled>还差 ${CFG.picksPerTeam} 人</button>
+      </div>`, { wide: true });
 
     const modal = document.querySelector('#modal-root .modal');
     if (!modal) return;
-    const grid = modal.querySelector('#pick-grid');
-    const countEl = modal.querySelector('#pick-count');
-    const startBtn = modal.querySelector('#btn-start-match');
 
-    grid.addEventListener('click', e => {
-      const card = e.target.closest('[data-pick]');
-      if (!card || card.disabled) return;
-      const id = Number(card.dataset.pick);
-      if (selected.has(id)) {
-        selected.delete(id);
-        card.classList.remove('is-selected');
-      } else {
-        if (selected.size >= 3) return;
-        selected.add(id);
-        card.classList.add('is-selected');
-      }
-      countEl.textContent = `${selected.size} / 3`;
-      countEl.classList.toggle('is-full', selected.size === 3);
-      startBtn.disabled = selected.size !== 3;
-      startBtn.textContent = selected.size === 3 ? '开球' : `还差 ${3 - selected.size} 人`;
+    modal.addEventListener('click', e => {
+      const card = e.target.closest('[data-pool]');
+      if (!card || card.disabled || busy || done() || !isHumanTurn()) return;
+      const id = Number(card.dataset.pool);
+      if (taken.has(id) || leaders.indexOf(id) >= 0) return;
+      rosters[human.id].push(id);
+      taken.add(id);
+      turn++;
+      renderBody();
+      if (!done() && turns[turn] === opp.id) aiStep();
     });
 
-    startBtn.addEventListener('click', () => {
-      if (selected.size !== 3) return;
-      const ids = Array.from(selected);
-      const result = Game.playMatch(st, oppId, ids);
+    modal.addEventListener('click', e => {
+      if (!e.target.closest('#btn-start-match')) return;
+      if (!done()) return;
+      const payload = {};
+      payload[human.id] = rosters[human.id];
+      payload[opp.id] = rosters[opp.id];
+      const result = Game.playMatch(st, oppId, payload);
       if (!result) { closeModal(); render(); return; }
       showResult(result);
     });
+
+    renderBody();
+    if (turns[turn] === opp.id) aiStep();
   }
 
   function showResult(result) {
@@ -749,32 +651,37 @@
    * 规则 / 菜单
    * ============================================================ */
   function openRules() {
-    openModal(`${modalHead('规则与设定', '来自 rules.png、schedule.md 与球员信息表.et')}
+    openModal(`${modalHead('规则与设定', '高三这一年 · 来自 schedule.md 与球员信息表.et')}
       <div class="rules-section">
+        <h4>零、背景</h4>
+        <p>故事发生在<strong>高三学年</strong>：2025 年 7 月暑假留校开始补课，2026 年 6 月 9 日高考结束，赛季也在这一天落幕。</p>
         <h4>一、赛历（schedule.md）</h4>
         <p>赛季从 <code>2025-07-02</code> 到 <code>2026-06-09</code>。</p>
         <ul>
           <li>暑假 7.12—8.10，寒假 2.11—2.24：球场放假。</li>
           <li>暑假留校 7.2—7.11、8.11—8.30；寒假留校 2.5—2.10、2.25—3.1：周二、周四、周六打球，最后一天不打。</li>
           <li>正常上学周：周二、周五下午第一节、周四下午第二节有体育课，周日照常打球。</li>
-          <li>小考试 3 天、大考试 6 天：考试周每天都可以打球。</li>
+          <li>小考试 3 天、大考试 6 天：<strong>考试期间每天晚上都能打球</strong>，而且客串球员只在这时出现。</li>
         </ul>
-        <img class="rules-img" src="rules.png" alt="选秀规则原图" />
-        <h4>二、选秀（rules.png）</h4>
+        <img class="rules-img" src="rules.png" alt="联盟规则原图" />
+        <h4>二、每场临时组队（本轮重点）</h4>
         <ul>
-          <li>钦定三个建队核心：大娘、奶龙、走刀。</li>
-          <li>三支球队分为 A / B / C 三个批次，优先级依次递减；批次由最近一次比赛结果决定，输得最多的拿 A。</li>
-          <li>选秀顺序：<code>ABC ABC BCA CAB</code>，共 12 个签位，每队 4 人。</li>
-          <li>锁定：选秀前可锁定上一轮自己的一名球员，至多一人，不能是上一轮自己的第一顺位；锁定后该球员充当本轮第一顺位。</li>
-          <li>交易市场：v1.1.3 暂未实现，排在后续版本计划里。</li>
+          <li>没有固定阵容：<strong>每场比赛前，两位领袖都要重新从到场的人里选人</strong>。</li>
+          <li>每次到场固定 <strong>15 人</strong>（含领袖）：锋线全来，后卫随机来，客串球员只在考试期间出现。</li>
+          <li>两位领袖轮流选人，每人选 5 人，加上自己共 6 人；选满才能开球。</li>
+          <li>3v3、先到 21 分且领先 2 分；6 人里自动排 3 人首发，其余轮换。</li>
+          <li>建队核心：大娘、奶龙、走刀，三人都是锋线，领袖不会受伤。</li>
+          <li>交易市场：暂未实现，排在后续版本计划里。</li>
         </ul>
-        <h4>三、比赛</h4>
+        <h4>三、比赛与养成</h4>
         <ul>
-          <li>3v3，先到 21 分且领先 2 分获胜。</li>
           <li>球员属性由身高、体重、位置和名字稳定生成，特性来自「球场特性」列。</li>
-          <li>体力低于 28 时带伤上阵有受伤风险，受伤球员无法出场。</li>
+          <li>体力低于 28 时继续上场有受伤风险，伤员不会出现在下一次的到场名单里。</li>
+          <li>「全班加练」会提升所有健康球员，比赛日只能做一件事：约战、加练或休息。</li>
         </ul>
-        <h4>四、数据说明</h4>
+        <h4>四、老师点评</h4>
+        <p>正常上学的非考试日，按星期会有一位老师点评球队；赛后结算里还会补一句输赢不同的点评。</p>
+        <h4>五、数据说明</h4>
         <p>22 名球员的数据来自球员信息表.et；六位老师作为剧情 NPC 出现在随机事件里。这一轮只开放「大娘」作为主角，奶龙与走刀暂未解锁。</p>
       </div>
       <div class="modal-actions"><button class="btn btn-primary" data-close="1">知道了</button></div>`, { wide: true });
@@ -875,34 +782,14 @@
     });
     $('#btn-rules').addEventListener('click', openRules);
 
-    // 选秀
-    $('#draft-pool').addEventListener('click', e => {
-      const btn = e.target.closest('.player-card');
-      if (!btn || btn.disabled) return;
-      const st = Game.state;
-      const slot = Draft.currentSlot(st);
-      if (!slot) return;
-      const team = st.teams.find(t => t.id === slot.teamId);
-      if (!team.human) return;
-      Draft.humanPick(st, Number(btn.dataset.id));
-      Game.save(st);
-      renderDraft();
-      runDraft();
-    });
-    $('#draft-lockpanel').addEventListener('click', e => {
-      const btn = e.target.closest('[data-lock]');
-      if (!btn) return;
-      const val = btn.dataset.lock;
-      Draft.humanLock(Game.state, val === '0' ? null : Number(val));
-      Game.save(Game.state);
-      renderDraft();
-      runDraft();
-    });
-
     // 主界面
     document.addEventListener('click', e => {
       const match = e.target.closest('[data-match]');
-      if (match) { openMatchPreview(match.dataset.match); return; }
+      if (match) {
+        if (e.target.closest('#modal-root')) return;
+        openTeamBuilder(match.dataset.match);
+        return;
+      }
       if (e.target.closest('[data-train]')) { openTraining(); return; }
       if (e.target.closest('[data-train-attr]')) {
         const attr = e.target.closest('[data-train-attr]').dataset.trainAttr;
@@ -971,45 +858,27 @@
     bind();
     renderTitle();
 
-    // 演示模式：?demo=draft / ?demo=main / ?demo=match / ?demo=end
+    // 演示模式：?demo=main / ?demo=team / ?demo=match / ?demo=school / ?demo=end
     try {
       const params = new URLSearchParams(global.location.search);
       const demo = params.get('demo');
       if (demo) {
         Game.create();
         const st = Game.state;
-        if (demo === 'draft') {
-          // 自动处理 AI 的签位，停在玩家选秀的那一刻
-          let guard = 0;
-          while (st.phase === 'draft' && st.draft && st.draft.stage === 'pick' && guard++ < 20) {
-            const slot = Draft.currentSlot(st);
-            if (!slot) break;
-            if (st.teams.find(t => t.id === slot.teamId).human) break;
-            Draft.step(st);
-          }
-          Game.save(st);
-          render();
-          return;
-        }
-        const autoDraft = () => {
-          let guard = 0;
-          while (st.phase === 'draft' && guard++ < 80) {
-            if (st.draft.stage === 'lock') { Draft.humanLock(st, null); continue; }
-            const r = Draft.step(st);
-            if (r.type === 'human') {
-              const best = st.draft.pool.map(id => st.players[id]).sort((a, b) => b.overall - a.overall)[0];
-              Draft.humanPick(st, best.id);
-            }
-          }
-        };
-        autoDraft();
 
-        if (demo === 'summary') {
-          Game.save(st);
-          render();
-          draftComplete();
-          return;
-        }
+        const autoRosters = oppId => {
+          const setup = Game.buildMatchSetup(st, 'T1', oppId);
+          if (!setup) return null;
+          const r = {};
+          r.T1 = setup.rosters.H;
+          r[oppId] = setup.rosters.A;
+          return r;
+        };
+
+        const skipToPlayable = () => {
+          Game.skip(st);
+          return Cal.dayInfo(st.date).playable;
+        };
 
         const skipToSchool = requirePlayable => {
           let guard = 0;
@@ -1029,72 +898,61 @@
           return;
         }
 
-        if (demo === 'lineup') {
-          skipToSchool(true);
+        if (demo === 'team' || demo === 'lineup') {
+          skipToPlayable();
           Game.save(st);
           render();
           const opps = Game.playableOpponents(st);
-          if (opps.length) openMatchPreview(opps[0].id);
+          if (opps.length) openTeamBuilder(opps[0].id);
           return;
         }
 
-        if (demo === 'schoolmatch') {
-          skipToSchool(true);
+        if (demo === 'match' || demo === 'schoolmatch') {
+          if (demo === 'schoolmatch') skipToSchool(true); else skipToPlayable();
           const opps = Game.playableOpponents(st);
-          const ids = Game.rosterPlayers(st, 'T1')
-            .filter(p => p.injury <= 0)
-            .sort((a, b) => b.overall - a.overall)
-            .slice(0, 3)
-            .map(p => p.id);
-          const result = opps.length ? Game.playMatch(st, opps[0].id, ids) : null;
+          const rosters = opps.length ? autoRosters(opps[0].id) : null;
+          const result = rosters ? Game.playMatch(st, opps[0].id, rosters) : null;
           Game.save(st);
           render();
           if (result) showResult(result);
           return;
         }
 
-        const playSeason = untilDraft => {
+        const playSeason = () => {
           let guard = 0;
           while (st.phase === 'season' && guard++ < 400) {
             const info = Cal.dayInfo(st.date);
             const opps = Game.playableOpponents(st);
-            if (info.playable && opps.length) Game.playMatch(st, opps[0].id);
-            else Game.rest(st);
-            if (st.phase === 'draft') {
-              if (untilDraft) break;
-              autoDraft();
+            if (info.playable && opps.length) {
+              const rosters = autoRosters(opps[0].id);
+              if (rosters) Game.playMatch(st, opps[0].id, rosters);
+              else Game.rest(st);
+            } else {
+              Game.rest(st);
             }
           }
         };
 
         if (demo === 'end') {
-          playSeason(false);
+          playSeason();
           Game.save(st);
           render();
           return;
         }
 
-        if (demo === 'lock') {
-          playSeason(true);
-          Game.save(st);
-          render();
-          return;
-        }
-
-        Game.skip(st);
-        if (demo === 'match') {
-          const opps = Game.playableOpponents(st);
-          const result = opps.length ? Game.playMatch(st, opps[0].id) : null;
-          Game.save(st);
-          render();
-          if (result) showResult(result);
-          return;
-        }
         if (demo === 'main') {
+          skipToPlayable();
           const opps = Game.playableOpponents(st);
-          if (opps.length) Game.playMatch(st, opps[0].id);
-          Game.skip(st);
+          if (opps.length) {
+            const rosters = autoRosters(opps[0].id);
+            if (rosters) Game.playMatch(st, opps[0].id, rosters);
+          }
+          skipToPlayable();
+          Game.save(st);
+          render();
+          return;
         }
+
         Game.save(st);
         render();
         return;

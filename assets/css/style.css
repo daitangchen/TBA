@@ -337,160 +337,6 @@ b, strong { font-weight: 700; }
 }
 
 /* ==========================================================================
-   选秀页
-   ========================================================================== */
-#screen-draft.is-active { display: block; }
-.draft-shell {
-  width: min(1480px, 100% - 36px);
-  margin: 0 auto;
-  padding: 22px 0 36px;
-}
-.draft-header {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 20px;
-  flex-wrap: wrap;
-  padding-bottom: 16px;
-  border-bottom: 1px solid var(--line);
-  margin-bottom: 18px;
-}
-.draft-header h2 { font-family: var(--mono); font-size: clamp(26px, 3vw, 38px); letter-spacing: 0.02em; }
-.batch-row { display: flex; gap: 10px; flex-wrap: wrap; }
-.batch-pill {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  border: 1px solid var(--line-strong);
-  border-radius: 12px;
-  padding: 8px 12px;
-  background: var(--panel-2);
-}
-.batch-pill b {
-  width: 24px; height: 24px;
-  display: grid; place-items: center;
-  border-radius: 7px;
-  background: linear-gradient(140deg, var(--orange-2), #ff5e3a);
-  color: #1a0c00;
-  font-family: var(--mono);
-  font-size: 13px;
-}
-.batch-pill span { font-size: 13px; }
-.batch-pill small { display: block; color: var(--dim); font-size: 10.5px; letter-spacing: 0.06em; }
-.batch-pill.is-human { border-color: rgba(255, 176, 32, 0.55); box-shadow: 0 0 0 1px rgba(255, 176, 32, 0.2) inset; }
-.draft-counter { font-family: var(--mono); font-size: 13px; color: var(--muted); letter-spacing: 0.08em; }
-
-.draft-grid {
-  display: grid;
-  grid-template-columns: 300px minmax(0, 1fr) 300px;
-  gap: 18px;
-  align-items: start;
-}
-.draft-side { display: flex; flex-direction: column; gap: 14px; position: sticky; top: 16px; }
-
-.pick-log { display: flex; flex-direction: column; gap: 6px; max-height: 480px; overflow: auto; padding-right: 4px; }
-.pick-entry {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12.5px;
-  padding: 7px 9px;
-  border-radius: 9px;
-  background: rgba(255, 255, 255, 0.025);
-  border: 1px solid transparent;
-  animation: slideIn 0.3s ease both;
-}
-.pick-entry .pick-no { font-family: var(--mono); color: var(--dim); width: 18px; flex: none; }
-.pick-entry .pick-team { color: var(--muted); flex: none; }
-.pick-entry .pick-player { font-weight: 700; }
-.pick-entry.is-locked { border-color: rgba(255, 176, 32, 0.35); background: rgba(255, 176, 32, 0.07); }
-.pick-entry.is-current { border-color: rgba(255, 122, 24, 0.6); background: rgba(255, 122, 24, 0.08); }
-@keyframes slideIn { from { opacity: 0; transform: translateX(-8px); } to { opacity: 1; transform: none; } }
-
-.pool-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 10px;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-.pool-head .panel-title { margin-bottom: 0; }
-.pool-legend { display: flex; gap: 8px; }
-
-.pool-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(196px, 1fr));
-  gap: 12px;
-}
-.player-card {
-  position: relative;
-  text-align: left;
-  border: 1px solid var(--line);
-  background: linear-gradient(165deg, rgba(24, 35, 57, 0.92), rgba(13, 20, 34, 0.92));
-  border-radius: 14px;
-  padding: 13px 13px 11px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  transition: transform 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease;
-  animation: cardIn 0.35s ease both;
-}
-@keyframes cardIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
-.player-card:hover { transform: translateY(-3px); border-color: rgba(255, 176, 32, 0.55); box-shadow: 0 14px 30px rgba(0, 0, 0, 0.45); }
-.player-card:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
-.player-card.is-mine { border-color: rgba(47, 227, 200, 0.4); }
-
-.pc-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
-.pc-name { font-size: 17px; font-weight: 800; letter-spacing: 0.03em; }
-.pc-sub { font-size: 11.5px; color: var(--dim); margin-top: 1px; }
-.pc-ovr {
-  font-family: var(--mono);
-  font-size: 24px;
-  font-weight: 800;
-  line-height: 1;
-  color: var(--orange-2);
-  text-align: right;
-}
-.pc-ovr small { display: block; font-size: 9px; color: var(--dim); letter-spacing: 0.12em; }
-.pc-tags { display: flex; gap: 5px; flex-wrap: wrap; }
-.pc-trait { font-size: 11.5px; color: var(--muted); border-top: 1px dashed var(--line); padding-top: 7px; }
-.pc-trait b { color: var(--orange-2); font-weight: 600; }
-
-.pc-attrs { display: grid; grid-template-columns: 1fr 1fr; gap: 3px 10px; }
-.attr { display: flex; align-items: center; gap: 6px; font-size: 10.5px; color: var(--dim); }
-.attr .attr-k { width: 26px; flex: none; }
-.attr .bar { height: 4px; flex: 1; background: rgba(255, 255, 255, 0.07); border-radius: 3px; overflow: hidden; }
-.attr .bar i { display: block; height: 100%; background: linear-gradient(90deg, var(--teal), var(--orange-2)); border-radius: inherit; }
-.attr b { width: 20px; text-align: right; font-family: var(--mono); color: var(--muted); font-weight: 600; }
-
-.mini-roster { display: flex; flex-direction: column; gap: 8px; }
-.mini-player {
-  display: flex; align-items: center; gap: 10px;
-  padding: 8px 10px; border-radius: 10px;
-  background: rgba(255, 255, 255, 0.025);
-  border: 1px solid var(--line);
-}
-.mini-player .mini-ovr { font-family: var(--mono); font-weight: 800; color: var(--orange-2); width: 28px; }
-.mini-player .mini-name { font-weight: 700; font-size: 14px; }
-.mini-player .mini-pos { margin-left: auto; font-size: 11px; color: var(--dim); }
-
-.rule-list { display: flex; flex-direction: column; gap: 10px; font-size: 12.5px; color: var(--muted); line-height: 1.6; }
-.rule-list b { color: var(--text); }
-
-.lock-panel { border-color: rgba(255, 176, 32, 0.35); }
-.lock-list { display: flex; flex-direction: column; gap: 8px; margin: 10px 0; }
-.lock-btn {
-  display: flex; align-items: center; gap: 10px;
-  padding: 9px 11px; border-radius: 10px;
-  border: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.03);
-  text-align: left; width: 100%;
-}
-.lock-btn:hover { border-color: var(--orange); }
-.lock-btn.is-picked { border-color: var(--orange); background: rgba(255, 122, 24, 0.1); }
-
-/* ==========================================================================
    主界面
    ========================================================================== */
 .topbar {
@@ -833,29 +679,6 @@ b, strong { font-weight: 700; }
 .play-log div { display: flex; gap: 10px; }
 .play-log .score { font-family: var(--mono); color: var(--orange-2); min-width: 42px; }
 
-/* 选秀总结 */
-.sum-team { margin-top: 14px; }
-.sum-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 8px; }
-.sum-head b { font-size: 15px; letter-spacing: 0.03em; }
-.sum-head .muted { font-size: 11.5px; }
-.sum-chips { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
-.sum-chip {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 7px 10px;
-  border-radius: 9px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid var(--line);
-  font-size: 12.5px;
-  min-width: 0;
-}
-.sum-chip .ovr { font-family: var(--mono); font-weight: 700; color: var(--orange-2); }
-.sum-chip .nm { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sum-chip em { margin-left: auto; font-style: normal; font-size: 9.5px; letter-spacing: 0.06em; color: var(--dim); white-space: nowrap; }
-.sum-chip.is-core { border-color: rgba(47, 227, 200, 0.35); }
-.sum-chip.is-bonus { border-color: rgba(255, 176, 32, 0.45); background: rgba(255, 176, 32, 0.06); }
-.sum-chip.is-bonus em { color: var(--orange-2); }
 .modal-actions.is-sticky {
   position: sticky;
   bottom: -24px;
@@ -913,6 +736,45 @@ b, strong { font-weight: 700; }
   align-items: flex-start;
 }
 .pick-opponent .lineup-col { flex: 1; min-width: 0; }
+
+/* 赛前组队 / 15 人池 */
+.build-meta { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; font-size: 12px; }
+.build-teams { display: grid; grid-template-columns: 1fr auto 1fr; gap: 12px; align-items: start; }
+.build-team { border: 1px solid var(--line); border-radius: 12px; padding: 10px; background: rgba(255, 255, 255, 0.02); min-width: 0; }
+.build-team-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.build-team-head b { font-size: 14px; letter-spacing: 0.03em; }
+.build-vs { align-self: center; font-family: var(--mono); color: var(--dim); font-size: 12px; letter-spacing: 0.1em; }
+.build-slots { display: flex; flex-direction: column; gap: 5px; }
+.slot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 9px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid transparent;
+  min-width: 0;
+}
+.slot.is-leader { border-color: rgba(47, 227, 200, 0.35); background: rgba(47, 227, 200, 0.06); }
+.slot.is-filled { border-color: var(--line); }
+.slot.is-empty { border: 1px dashed var(--line-strong); color: var(--dim); justify-content: center; font-size: 11px; min-height: 31px; }
+.slot-ovr { font-family: var(--mono); font-weight: 700; color: var(--orange-2); width: 22px; flex: none; }
+.slot-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.slot em { margin-left: auto; font-style: normal; font-size: 9.5px; color: var(--dim); letter-spacing: 0.06em; }
+.build-turn { margin: 12px 0 8px; font-size: 13px; color: var(--muted); }
+.build-turn b { color: var(--orange-2); }
+.build-turn b.is-ready { color: var(--green); }
+.slot-tag {
+  margin-left: auto;
+  font-style: normal;
+  font-size: 9.5px;
+  color: var(--teal);
+  border: 1px solid rgba(47, 227, 200, 0.35);
+  border-radius: 5px;
+  padding: 0 4px;
+  white-space: nowrap;
+}
 
 /* 老师点评 */
 .teacher-note {
@@ -1016,18 +878,12 @@ b, strong { font-weight: 700; }
 @media (max-width: 1180px) {
   .layout { grid-template-columns: 300px minmax(0, 1fr); }
   .side-column { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; align-items: start; }
-  .draft-grid { grid-template-columns: 260px minmax(0, 1fr); }
-  .draft-side:last-child { grid-column: 1 / -1; flex-direction: row; }
-  .draft-side:last-child > .panel { flex: 1; }
 }
 @media (max-width: 900px) {
   .title-main { grid-template-columns: 1fr; gap: 32px; padding: 32px 0; }
   .title-copy h1 { font-size: clamp(48px, 12vw, 80px); }
   .layout { grid-template-columns: 1fr; width: calc(100% - 24px); }
   .side-column { grid-template-columns: 1fr; }
-  .draft-grid { grid-template-columns: 1fr; }
-  .draft-side { position: static; }
-  .draft-side:last-child { flex-direction: column; }
   .box-grid { grid-template-columns: 1fr; }
   .matchup { grid-template-columns: 1fr; }
   .scoreboard { grid-template-columns: 1fr auto 1fr; }
@@ -1050,10 +906,8 @@ b, strong { font-weight: 700; }
   .action-btn > span { min-width: 0; }
   .day-status { font-size: 11px; padding: 5px 10px; }
   .pick-grid { grid-template-columns: 1fr; }
-  .pick-opponent { flex-direction: column; }
-  .pool-grid { grid-template-columns: 1fr 1fr; }
-  .player-card { padding: 10px; }
-  .pc-name { font-size: 15px; }
+  .build-teams { grid-template-columns: 1fr; }
+  .build-vs { text-align: center; }
   .calendar-panel { display: none; }
   .title-actions .btn { flex: 1; }
 }

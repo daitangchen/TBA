@@ -1,6 +1,6 @@
 /*!
  * TBA 模拟器 · 核心引擎
- * 日历 / 球员属性 / 选秀 / 3v3 比赛模拟 / 游戏状态
+ * 日历 / 球员属性 / 每场 15 人池与组队 / 3v3 比赛模拟 / 游戏状态
  */
 (function (global) {
   'use strict';
@@ -101,7 +101,7 @@
       const idx = Math.round((parseDate(date) - parseDate(exam.start)) / 86400000) + 1;
       playable = true;
       tag = exam.kind === 'big' ? '大考' : '小考';
-      reason = `${exam.label}第 ${idx} 天 · 考试周每天都可以打球`;
+      reason = `${exam.label}第 ${idx} 天 · 每天晚上都能打球，客串球员也会到场`;
       playLabel = '考试周';
     } else if (period && period.kind === 'vacation') {
       tag = '假期';
@@ -248,41 +248,50 @@
   /* ============================================================
    * 3. 比赛模拟（3v3，先到 21 分且领先 2 分）
    * ============================================================ */
-  function healthyOf(state, team) {
-    return team.roster.map(id => state.players[id]).filter(p => p && p.injury <= 0);
+  function healthyByIds(state, ids) {
+    return ids.map(id => state.players[id]).filter(p => p && p.injury <= 0);
   }
 
-  function chooseLineup(state, team) {
-    const pool = healthyOf(state, team);
+  function chooseLineupFrom(state, ids, leaderId) {
+    const pool = healthyByIds(state, ids);
     if (pool.length < CFG.lineupSize) return null;
     const sorted = pool.slice().sort((a, b) =>
       (b.overall * staminaFactor(b.stamina)) - (a.overall * staminaFactor(a.stamina))
     );
-    return sorted.slice(0, CFG.lineupSize);
+    let lineup = sorted.slice(0, CFG.lineupSize);
+    // 领袖必须首发：他是带队的人
+    if (leaderId) {
+      const leader = pool.find(p => p.id === leaderId);
+      if (leader && lineup.indexOf(leader) < 0) {
+        lineup = [leader].concat(sorted.filter(p => p.id !== leaderId).slice(0, CFG.lineupSize - 1));
+      }
+    }
+    return lineup;
   }
 
+  /**
+   * opts.rosters = { H: [id...], A: [id...] } —— 每场比赛前临时组队的名单
+   */
   function simulateMatch(state, homeId, awayId, opts) {
     const home = state.teams.find(t => t.id === homeId);
     const away = state.teams.find(t => t.id === awayId);
     if (!home || !away) return null;
+    if (!opts || !opts.rosters) return null;
 
-    // 玩家手动指定的首发优先，否则按综合能力 + 体力自动排
-    let startH = null;
-    if (opts && Array.isArray(opts.homeLineup) && opts.homeLineup.length) {
-      const picked = opts.homeLineup.map(id => state.players[id]);
-      const legal = picked.length === CFG.lineupSize &&
-        picked.every(p => p && p.injury <= 0 && home.roster.indexOf(p.id) >= 0);
-      if (!legal) return null;
-      startH = picked;
-    } else {
-      startH = chooseLineup(state, home);
-    }
-    const startA = chooseLineup(state, away);
+    const rosterH = (opts.rosters.H || []).filter(Boolean);
+    const rosterA = (opts.rosters.A || []).filter(Boolean);
+    if (rosterH.length < CFG.lineupSize || rosterA.length < CFG.lineupSize) return null;
+
+    const startH = (opts.lineupH && opts.lineupH.length)
+      ? opts.lineupH.map(id => state.players[id])
+      : chooseLineupFrom(state, rosterH, home.core);
+    const startA = chooseLineupFrom(state, rosterA, away.core);
     if (!startH || !startA) return null;
+    if (startH.some(p => !p || p.injury > 0 || rosterH.indexOf(p.id) < 0)) return null;
 
     const side = {
-      H: { team: home, lineup: startH.slice(), bench: healthyOf(state, home).filter(p => startH.indexOf(p) < 0) },
-      A: { team: away, lineup: startA.slice(), bench: healthyOf(state, away).filter(p => startA.indexOf(p) < 0) }
+      H: { team: home, lineup: startH.slice(), bench: healthyByIds(state, rosterH).filter(p => startH.indexOf(p) < 0) },
+      A: { team: away, lineup: startA.slice(), bench: healthyByIds(state, rosterA).filter(p => startA.indexOf(p) < 0) }
     };
 
     const box = {};
@@ -305,18 +314,21 @@
     function rotate(k) {
       const s = side[k];
       if (!s.bench.length) return;
-      const weakest = s.lineup.slice().sort((a, b) => a.stamina - b.stamina)[0];
-      const best = s.bench.slice().sort((a, b) => b.stamina - a.stamina)[0];
-      if (best && weakest && best.stamina > weakest.stamina + 12) {
-        s.lineup[s.lineup.indexOf(weakest)] = best;
-        s.bench[s.bench.indexOf(best)] = weakest;
-      }
+      // 领袖不下场，换综合最低的那个
+      const weakList = s.lineup.filter(p => !p.core);
+      if (!weakList.length) return;
+      const weakest = weakList.slice().sort((a, b) => a.overall - b.overall)[0];
+      const best = s.bench.slice().sort((a, b) => b.overall - a.overall)[0];
+      if (!best || !weakest) return;
+      if (best.overall < weakest.overall - 8) return;
+      s.lineup[s.lineup.indexOf(weakest)] = best;
+      s.bench[s.bench.indexOf(best)] = weakest;
     }
 
     while (possession < CFG.maxPossessions) {
       if ((scoreH >= CFG.winScore || scoreA >= CFG.winScore) && Math.abs(scoreH - scoreA) >= 2) break;
 
-      if (possession > 0 && possession % 17 === 0) { rotate('H'); rotate('A'); }
+      if (possession > 0 && possession % 14 === 0) { rotate('H'); rotate('A'); }
 
       const atkKey = offense;
       const defKey = other(offense);
@@ -435,248 +447,6 @@
 
   TBA.simulateMatch = simulateMatch;
 
-  /* ============================================================
-   * 4. 选秀
-   * ============================================================ */
-  function batchOfTeam(draft, teamId) {
-    for (const b in draft.batches) if (draft.batches[b] === teamId) return b;
-    return '?';
-  }
-
-  function currentSlot(state) {
-    const d = state.draft;
-    if (!d || d.idx >= d.seq.length) return null;
-    const teamId = d.seq[d.idx];
-    return { teamId, batch: batchOfTeam(d, teamId) };
-  }
-
-  function aiPickPlayer(state, teamId) {
-    const d = state.draft;
-    const team = state.teams.find(t => t.id === teamId);
-    const roster = team.roster.map(id => state.players[id]).filter(Boolean);
-    const fwd = roster.filter(p => p.pos === '锋线').length;
-    const guard = roster.filter(p => p.pos === '后卫').length;
-
-    const scored = d.pool.map(id => {
-      const p = state.players[id];
-      let s = p.overall + rand(-3, 7);
-      if (p.pos === '锋线' && fwd < 1) s += 9;
-      if (p.pos === '后卫' && guard < 2) s += 5;
-      if (p.core) s += 5;
-      return { id, s };
-    });
-    scored.sort((a, b) => b.s - a.s);
-    return scored.length ? scored[0].id : null;
-  }
-
-  function doPick(state, teamId, playerId, wasLocked) {
-    const d = state.draft;
-    const p = state.players[playerId];
-    d.pool = d.pool.filter(id => id !== playerId);
-    const pick = { teamId, playerId, batch: batchOfTeam(d, teamId), locked: !!wasLocked };
-    d.picks.push(pick);
-    d.log.push({
-      pickNo: d.picks.length,
-      teamId,
-      playerId,
-      batch: pick.batch,
-      text: `${d.picks.length}. [${pick.batch}] ${teamName(state, teamId)} 选中 ${p.name}${wasLocked ? '（锁定）' : ''}`
-    });
-    d.idx += 1;
-    return pick;
-  }
-
-  function teamName(state, teamId) {
-    const t = state.teams.find(x => x.id === teamId);
-    return t ? t.name : teamId;
-  }
-  TBA.teamName = teamName;
-
-  function stepDraft(state) {
-    const d = state.draft;
-    if (!d) return { type: 'none' };
-    if (d.idx >= d.seq.length) { finishDraft(state); return { type: 'done' }; }
-
-    const teamId = d.seq[d.idx];
-    const team = state.teams.find(t => t.id === teamId);
-
-    if (d.locked[teamId] && !d.lockUsed[teamId]) {
-      d.lockUsed[teamId] = true;
-      doPick(state, teamId, d.locked[teamId], true);
-      return { type: 'pick', teamId, playerId: d.locked[teamId], locked: true };
-    }
-    if (team.human) return { type: 'human', teamId };
-
-    const pid = aiPickPlayer(state, teamId);
-    doPick(state, teamId, pid, false);
-    return { type: 'pick', teamId, playerId: pid, locked: false };
-  }
-
-  function humanPick(state, playerId) {
-    const d = state.draft;
-    const slot = currentSlot(state);
-    if (!slot) return null;
-    const team = state.teams.find(t => t.id === slot.teamId);
-    if (!team || !team.human) return null;
-    if (d.pool.indexOf(playerId) < 0) return null;
-    return doPick(state, slot.teamId, playerId, false);
-  }
-
-  function batchesByStandings(state) {
-    const sorted = state.teams.slice().sort((a, b) => {
-      if (b.losses !== a.losses) return b.losses - a.losses;
-      const da = a.pf - a.pa, db = b.pf - b.pa;
-      if (da !== db) return da - db;
-      return Math.random() - 0.5;
-    });
-    return { A: sorted[0].id, B: sorted[1].id, C: sorted[2].id };
-  }
-
-  function startDraft(state, round) {
-    const isSecond = round >= 2;
-    const prev = isSecond && state.draftHistory.length ? state.draftHistory[state.draftHistory.length - 1] : null;
-    const batches = isSecond ? batchesByStandings(state) : (() => {
-      const order = shuffle(['T1', 'T2', 'T3']);
-      return { A: order[0], B: order[1], C: order[2] };
-    })();
-
-    // 把上一轮球员放回池子（建队核心始终留在队里）
-    state.teams.forEach(t => { t.roster = [t.core]; });
-
-    const pool = Object.keys(state.players).map(Number).filter(id => !state.players[id].core);
-
-    state.draft = {
-      round,
-      stage: isSecond ? 'lock' : 'pick',
-      batches,
-      seq: TBA.DRAFT_ORDER.map(b => batches[b]),
-      idx: 0,
-      pool,
-      picks: [],
-      log: [],
-      locked: {},
-      lockUsed: {},
-      previous: prev,
-      humanLocked: undefined
-    };
-    state.phase = 'draft';
-  }
-
-  function aiLockChoices(state) {
-    const d = state.draft;
-    if (!d.previous) return;
-    state.teams.filter(t => !t.human).forEach(t => {
-      const roster = ((d.previous.rosterAfter && d.previous.rosterAfter[t.id]) || [])
-        .filter(id => id !== d.previous.firstPick[t.id]);
-      if (!roster.length) return;
-      if (Math.random() < 0.7) {
-        const best = roster.map(id => state.players[id]).sort((a, b) => b.overall - a.overall)[0];
-        d.locked[t.id] = best.id;
-      }
-    });
-  }
-
-  function humanLock(state, playerId) {
-    const d = state.draft;
-    if (!d || d.stage !== 'lock') return false;
-    const human = state.teams.find(t => t.human);
-    if (playerId !== null) {
-      const allowed = ((d.previous.rosterAfter && d.previous.rosterAfter[human.id]) || [])
-        .filter(id => id !== d.previous.firstPick[human.id]);
-      if (allowed.indexOf(playerId) < 0) return false;
-      d.locked[human.id] = playerId;
-    }
-    aiLockChoices(state);
-    // 被锁定的球员立即从池子里拿掉，其他球队不能截胡
-    Object.keys(d.locked).forEach(tid => {
-      const pid = d.locked[tid];
-      if (pid) d.pool = d.pool.filter(id => id !== pid);
-    });
-    d.stage = 'pick';
-    return true;
-  }
-
-  function finishDraft(state) {
-    const d = state.draft;
-
-    // 本轮开始前的阵容（不含建队核心），供下一轮锁定使用
-    const rosterBefore = {};
-    state.teams.forEach(t => {
-      rosterBefore[t.id] = d.previous && d.previous.rosterAfter ? (d.previous.rosterAfter[t.id] || []) : [];
-    });
-
-    state.teams.forEach(t => {
-      const picked = d.picks.filter(p => p.teamId === t.id).map(p => p.playerId);
-      t.roster = [t.core].concat(picked);
-      t.roster = Array.from(new Set(t.roster));
-    });
-
-    // rules.png 只规定了四个顺位：每队再从剩余球员里随机补进一人，
-    // 凑满五名新秀（加建队核心共六人）
-    const bonus = [];
-    const leftover = d.pool.slice().filter(id => {
-      for (const t of state.teams) if (t.roster.indexOf(id) >= 0) return false;
-      return true;
-    });
-    const bonusOrder = shuffle(state.teams.map(t => t.id));
-    bonusOrder.forEach(tid => {
-      if (!leftover.length) return;
-      const idx = Math.floor(Math.random() * leftover.length);
-      const pid = leftover.splice(idx, 1)[0];
-      const team = state.teams.find(t => t.id === tid);
-      team.roster.push(pid);
-      bonus.push({ teamId: tid, playerId: pid });
-    });
-
-    // 新阵容统一恢复状态
-    state.teams.forEach(t => {
-      t.roster.forEach(id => {
-        const p = state.players[id];
-        if (p) { p.stamina = Math.max(p.stamina, 85); p.injury = 0; }
-      });
-    });
-
-    const firstPick = {};
-    state.teams.forEach(t => {
-      const first = d.picks.find(p => p.teamId === t.id);
-      firstPick[t.id] = first ? first.playerId : null;
-    });
-
-    const rosterAfter = {};
-    state.teams.forEach(t => { rosterAfter[t.id] = t.roster.filter(id => id !== t.core); });
-
-    state.draftHistory.push({
-      round: d.round,
-      date: state.date,
-      batches: d.batches,
-      picks: d.picks.slice(),
-      firstPick,
-      rosterBefore,
-      rosterAfter,
-      bonus
-    });
-
-    bonus.forEach(b => {
-      const team = state.teams.find(t => t.id === b.teamId);
-      Game.log(state, `随机补位：${state.players[b.playerId].name} 加入 ${team.name}。`, 'draft');
-    });
-
-    state.freeAgents = leftover;
-    state.draft = null;
-    state.phase = 'season';
-    Game.log(state, d.round === 1 ? '选秀大会结束，三支球队组建完毕。' : '中期选秀结束，联盟进入下半程。');
-  }
-
-  const draftApi = {
-    start: startDraft,
-    step: stepDraft,
-    humanPick,
-    humanLock,
-    currentSlot,
-    batchOfTeam,
-    teamName
-  };
-  TBA.draft = draftApi;
 
   /* ============================================================
    * 5. 游戏状态
@@ -686,7 +456,12 @@
   TBA.game = Game;
 
   Game.hasSave = function () {
-    try { return !!global.localStorage.getItem(SAVE_KEY); } catch (e) { return false; }
+    try {
+      const raw = global.localStorage.getItem(SAVE_KEY);
+      if (!raw) return false;
+      const s = JSON.parse(raw);
+      return !!(s && s.v === 2);
+    } catch (e) { return false; }
   };
   Game.save = function (state) {
     try {
@@ -699,7 +474,7 @@
       const raw = global.localStorage.getItem(SAVE_KEY);
       if (!raw) return null;
       const s = JSON.parse(raw);
-      if (!s || s.v !== 1) return null;
+      if (!s || s.v !== 2) return null;
       Game.state = s;
       return s;
     } catch (e) { return null; }
@@ -737,27 +512,23 @@
   Game.create = function () {
     const players = buildPlayers();
     const state = {
-      v: 1,
+      v: 2,
       character: '大娘',
-      phase: 'draft',
+      phase: 'season',
       date: SEA.start,
       players,
       teams: [
-        { id: 'T1', name: '大娘队', core: 1, human: true, roster: [1], wins: 0, losses: 0, pf: 0, pa: 0 },
-        { id: 'T2', name: '奶龙队', core: 2, human: false, roster: [2], wins: 0, losses: 0, pf: 0, pa: 0 },
-        { id: 'T3', name: '走刀队', core: 3, human: false, roster: [3], wins: 0, losses: 0, pf: 0, pa: 0 }
+        { id: 'T1', name: '大娘队', core: 1, human: true, wins: 0, losses: 0, pf: 0, pa: 0 },
+        { id: 'T2', name: '奶龙队', core: 2, human: false, wins: 0, losses: 0, pf: 0, pa: 0 },
+        { id: 'T3', name: '走刀队', core: 3, human: false, wins: 0, losses: 0, pf: 0, pa: 0 }
       ],
-      draft: null,
-      draftHistory: [],
       history: [],
       log: [],
       buffs: { hotHand: false },
-      freeAgents: [],
-      flags: { secondDraftDone: false },
-      lastResult: null
+      lastResult: null,
+      lastTeam: null
     };
-    Game.log(state, '2025 年 7 月 2 日，暑假留校第一天。三支球队的建队核心聚在球场边，开始选秀。');
-    startDraft(state, 1);
+    Game.log(state, '2025 年 7 月 2 日，高三的暑假留校第一天。球场上没有固定阵容，谁来了谁上。', 'info');
     Game.state = state;
     return state;
   };
@@ -770,14 +541,15 @@
     return state.teams.find(t => t.id === id);
   };
 
-  Game.rosterPlayers = function (state, teamId) {
-    const t = Game.teamById(state, teamId);
-    if (!t) return [];
-    return t.roster.map(id => state.players[id]).filter(Boolean);
+  // 上一场代表“大娘队”出场的 6 人（用于主界面展示，不是固定阵容）
+  Game.lastTeamPlayers = function (state) {
+    return (state.lastTeam || []).map(id => state.players[id]).filter(Boolean);
   };
 
-  Game.canField = function (state, teamId) {
-    return Game.rosterPlayers(state, teamId).filter(p => p.injury <= 0).length >= CFG.lineupSize;
+  // 理论上只要健康球员够 12 个就能凑一场
+  Game.canStartMatch = function (state) {
+    const need = CFG.picksPerTeam * 2 + 2;
+    return Object.values(state.players).filter(p => p.injury <= 0).length >= need;
   };
 
   Game.standings = function (state) {
@@ -804,7 +576,8 @@
       if (!p) return;
       const factor = result.participants[id];
       p.stamina = clamp(p.stamina - CFG.staminaMatch * factor, 0, 100);
-      if (p.stamina < CFG.injuryThreshold && p.injury <= 0 && Math.random() < CFG.injuryChance) {
+      // 建队核心不受伤：每场都得有人带队
+      if (!p.core && p.stamina < CFG.injuryThreshold && p.injury <= 0 && Math.random() < CFG.injuryChance) {
         p.injury = randInt(2, 4);
         if (isHumanMatch && (result.homeId === 'T1' || result.awayId === 'T1')) {
           Game.log(state, `${p.name} 在比赛中受伤，预计缺阵 ${p.injury} 天。`, 'bad');
@@ -826,37 +599,117 @@
     if (state.history.length > 100) state.history.length = 100;
   }
 
-  Game.previewMatch = function (state, opponentId) {
-    const human = Game.humanTeam(state);
-    const opp = Game.teamById(state, opponentId);
-    const roster = Game.rosterPlayers(state, human.id);
-    const theirs = chooseLineup(state, opp);
-    return { human, opp, roster, theirs };
+  /* ---------------- 每场比赛前的「到场 15 人」 ---------------- */
+  const isGuest = p => p.role === TBA.GUEST_ROLE;
+
+  /**
+   * 生成当天的球员池：
+   *  - 锋线全来（含三位建队核心）
+   *  - 后卫随机来（客串球员只在考试期间出现）
+   *  - 总人数固定 15（含领袖）
+   */
+  Game.buildPool = function (state) {
+    const exam = !!calendar.dayInfo(state.date).exam;
+    const all = Object.values(state.players).filter(p => p.injury <= 0);
+    const forwards = all.filter(p => p.pos === '锋线').sort((a, b) => b.overall - a.overall);
+    const guards = shuffle(all.filter(p => p.pos === '后卫' && (exam || !isGuest(p))));
+
+    const pool = forwards.slice();
+    for (const g of guards) {
+      if (pool.length >= CFG.poolSize) break;
+      pool.push(g);
+    }
+    // 极端情况（伤号太多）用剩下的健康球员补满
+    if (pool.length < CFG.poolSize) {
+      const rest = shuffle(all.filter(p => pool.indexOf(p) < 0));
+      for (const r of rest) {
+        if (pool.length >= CFG.poolSize) break;
+        pool.push(r);
+      }
+    }
+    // 三位领袖只要健康就一定到场
+    state.teams.forEach(t => {
+      const core = state.players[t.core];
+      if (core && core.injury <= 0 && pool.indexOf(core) < 0 && pool.length < CFG.poolSize) pool.push(core);
+    });
+    return pool;
+  };
+
+  Game.poolSummary = function (pool) {
+    return {
+      total: pool.length,
+      forwards: pool.filter(p => p.pos === '锋线').length,
+      guards: pool.filter(p => p.pos === '后卫').length,
+      guests: pool.filter(p => isGuest(p)).length
+    };
+  };
+
+  // AI 领袖的选人逻辑：先补位置，再挑综合
+  Game.aiPick = function (state, pool, teamIds) {
+    const picked = teamIds.map(id => state.players[id]);
+    const forwards = picked.filter(p => p.pos === '锋线').length;
+    const guards = picked.filter(p => p.pos === '后卫').length;
+    const scored = pool.map(p => {
+      let score = p.overall + rand(-2, 5);
+      if (p.pos === '锋线' && forwards < 1) score += 10;
+      if (p.pos === '后卫' && guards < 2) score += 6;
+      return { p, score };
+    });
+    scored.sort((a, b) => b.score - a.score);
+    return scored.length ? scored[0].p : null;
+  };
+
+  /**
+   * 纯 AI 的赛前组队（用于 AI 对 AI），返回 { pool, rosters }
+   */
+  Game.buildMatchSetup = function (state, homeId, awayId) {
+    const home = Game.teamById(state, homeId);
+    const away = Game.teamById(state, awayId);
+    if (!home || !away) return null;
+    const pool = Game.buildPool(state).slice();
+    const rosters = { H: [], A: [] };
+
+    [{ side: 'H', id: home.core }, { side: 'A', id: away.core }].forEach(({ side, id }) => {
+      const p = state.players[id];
+      if (!p) return;
+      rosters[side].push(id);
+      const idx = pool.indexOf(p);
+      if (idx >= 0) pool.splice(idx, 1);
+    });
+
+    for (let i = 0; i < CFG.picksPerTeam * 2; i++) {
+      const side = i % 2 === 0 ? 'H' : 'A';
+      const p = Game.aiPick(state, pool, rosters[side]);
+      if (!p) break;
+      rosters[side].push(p.id);
+      pool.splice(pool.indexOf(p), 1);
+    }
+    return { pool, rosters };
   };
 
   Game.playableOpponents = function (state) {
-    return state.teams.filter(t => !t.human && Game.canField(state, t.id));
+    return state.teams.filter(t => !t.human);
   };
 
-  // lineupIds 必须是 3 名、健康、且在本队名单里的球员
-  Game.checkLineup = function (state, lineupIds) {
-    if (!Array.isArray(lineupIds) || lineupIds.length !== CFG.lineupSize) return false;
-    if (new Set(lineupIds).size !== CFG.lineupSize) return false;
-    const human = Game.humanTeam(state);
-    return lineupIds.every(id => {
-      const p = state.players[id];
-      return p && p.injury <= 0 && human.roster.indexOf(id) >= 0;
-    });
-  };
+  /**
+   * rosters = { T1: [id...], T2: [id...] }，每场临时组队，不写入球队档案
+   */
+  Game.playMatch = function (state, opponentId, rosters) {
+    if (!rosters || !rosters.T1 || !rosters[opponentId]) return null;
+    const mine = rosters.T1.slice();
+    const theirs = rosters[opponentId].slice();
+    const need = CFG.picksPerTeam + 1;
+    if (mine.length !== need || theirs.length !== need) return null;
+    if (new Set(mine).size !== need || new Set(theirs).size !== need) return null;
+    if (mine.some(id => theirs.indexOf(id) >= 0)) return null;
+    if (mine.some(id => !state.players[id] || state.players[id].injury > 0)) return null;
+    if (theirs.some(id => !state.players[id] || state.players[id].injury > 0)) return null;
 
-  Game.playMatch = function (state, opponentId, lineupIds) {
-    if (!Game.canField(state, 'T1') || !Game.canField(state, opponentId)) return null;
-    if (lineupIds !== undefined && lineupIds !== null && !Game.checkLineup(state, lineupIds)) return null;
-    const result = simulateMatch(state, 'T1', opponentId, { homeLineup: lineupIds || null });
+    const result = simulateMatch(state, 'T1', opponentId, { rosters: { H: mine, A: theirs } });
     if (!result) return null;
     applyResult(state, result);
     state.lastResult = result;
-    state.lastLineup = result.lineupH.slice();
+    state.lastTeam = mine.slice();
     const opp = Game.teamById(state, opponentId);
     const win = result.winnerId === 'T1';
     Game.log(
@@ -870,8 +723,7 @@
   };
 
   Game.train = function (state, attr) {
-    const human = Game.humanTeam(state);
-    const players = Game.rosterPlayers(state, human.id).filter(p => p.injury <= 0);
+    const players = Object.values(state.players).filter(p => p.injury <= 0);
     const gains = [];
     players.forEach(p => {
       const inc = Math.random() < 0.25 ? 2 : 1;
@@ -880,20 +732,19 @@
       p.stamina = clamp(p.stamina - CFG.staminaTrain, 0, 100);
       gains.push({ name: p.name, inc });
     });
-    Game.log(state, `全队加练${ATTR_CN[attr]}，${gains.map(g => g.name + ' +' + g.inc).join('、')}。`, 'train');
+    Game.log(state, `全班加练${ATTR_CN[attr]}，${gains.map(g => g.name + ' +' + g.inc).join('、')}。`, 'train');
     Game.advance(state);
     Game.save(state);
     return gains;
   };
 
   Game.rest = function (state) {
-    const human = Game.humanTeam(state);
     const info = calendar.dayInfo(state.date);
-    Game.rosterPlayers(state, human.id).forEach(p => {
-      p.stamina = clamp(p.stamina + 6, 0, 100);
+    Object.values(state.players).forEach(p => {
+      if (p.injury <= 0) p.stamina = clamp(p.stamina + 6, 0, 100);
     });
     // 假期里天天休息，不必每天都记一条动态
-    if (info.playable) Game.log(state, '全队休整，体力有所恢复。', 'rest');
+    if (info.playable) Game.log(state, '全场休整，体力有所恢复。', 'rest');
     Game.advance(state);
     Game.save(state);
   };
@@ -925,30 +776,25 @@
 
     if (state.date > SEA.end) {
       state.phase = 'end';
-      Game.log(state, '赛季结束。');
-      return;
-    }
-
-    // 中期选秀
-    if (!state.flags.secondDraftDone && state.date === CFG.secondDraftDate) {
-      state.flags.secondDraftDone = true;
-      startDraft(state, 2);
-      Game.log(state, '寒假留校第一天，联盟宣布进行中期选秀。', 'draft');
+      Game.log(state, '高考结束，赛季也落幕了。');
       return;
     }
 
     const info = calendar.dayInfo(state.date);
 
-    // AI 之间的比赛
+    // AI 之间的比赛：两边各自临时组队
     if (info.playable) {
-      const aiTeams = state.teams.filter(t => !t.human && Game.canField(state, t.id));
+      const aiTeams = state.teams.filter(t => !t.human);
       if (aiTeams.length === 2 && Math.random() < CFG.aiMatchChance) {
-        const r = simulateMatch(state, aiTeams[0].id, aiTeams[1].id);
-        if (r) {
-          applyResult(state, r);
-          const t0 = Game.teamById(state, r.homeId).name;
-          const t1 = Game.teamById(state, r.awayId).name;
-          Game.log(state, `${t0} ${r.scoreH} : ${r.scoreA} ${t1}（AI 比赛）`, 'ai');
+        const setup = Game.buildMatchSetup(state, aiTeams[0].id, aiTeams[1].id);
+        if (setup) {
+          const r = simulateMatch(state, aiTeams[0].id, aiTeams[1].id, { rosters: setup.rosters });
+          if (r) {
+            applyResult(state, r);
+            const t0 = Game.teamById(state, r.homeId).name;
+            const t1 = Game.teamById(state, r.awayId).name;
+            Game.log(state, `${t0} ${r.scoreH} : ${r.scoreA} ${t1}（AI 比赛）`, 'ai');
+          }
         }
       }
     }
@@ -961,8 +807,7 @@
 
   Game.triggerEvent = function (state) {
     const ev = TBA.EVENTS[randInt(0, TBA.EVENTS.length - 1)];
-    const human = Game.humanTeam(state);
-    const players = Game.rosterPlayers(state, human.id);
+    const players = Object.values(state.players).filter(p => p.injury <= 0);
     (ev.effects || []).forEach(fx => {
       if (fx.type === 'stamina') {
         players.forEach(p => { p.stamina = clamp(p.stamina + fx.value, 0, 100); });
@@ -988,18 +833,11 @@
     return { standings, champion, human, topGames };
   };
 
-  /* 选秀阶段的中断提示文案 */
-  Game.draftPhaseText = function (state) {
-    const d = state.draft;
-    if (!d) return '';
-    return d.round === 1 ? '第一次选秀大会' : '中期选秀大会';
-  };
-
   /* ============================================================
    * 6. 导出
    * ============================================================ */
   TBA.utils = { clamp, rand, randInt, shuffle, hash, weightedPick, avg };
   TBA.engine = {
-    buildPlayers, overallOf, effAttr, traitMod, staminaFactor, chooseLineup, healthyOf
+    buildPlayers, overallOf, effAttr, traitMod, staminaFactor, chooseLineupFrom, healthyByIds
   };
 })(typeof window !== 'undefined' ? window : globalThis);
