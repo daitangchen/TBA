@@ -151,6 +151,66 @@ b, strong { font-weight: 700; }
 }
 
 /* ==========================================================================
+   密钥页
+   ========================================================================== */
+#screen-lock { position: relative; overflow: hidden; }
+#screen-lock.is-active { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+#screen-lock::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(900px 500px at 50% -10%, rgba(255, 122, 24, 0.18), transparent 65%),
+    radial-gradient(700px 400px at 90% 110%, rgba(47, 227, 200, 0.10), transparent 60%);
+  pointer-events: none;
+}
+.lock-shell { width: min(520px, calc(100% - 32px)); position: relative; z-index: 1; }
+.lock-card {
+  position: relative;
+  overflow: hidden;
+  padding: 38px 34px 30px;
+  border-radius: 26px;
+  border: 1px solid var(--line-strong);
+  background: linear-gradient(170deg, rgba(24, 35, 57, 0.96), rgba(10, 16, 28, 0.98));
+  box-shadow: 0 40px 100px rgba(0, 0, 0, 0.6);
+}
+.lock-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(420px 220px at 50% 0%, rgba(255, 122, 24, 0.22), transparent 70%);
+  pointer-events: none;
+}
+.lock-title { font-family: var(--mono); font-size: 44px; letter-spacing: 0.04em; margin: 4px 0 10px; line-height: 1; }
+.lock-sub { color: var(--muted); font-size: 13.5px; line-height: 1.75; max-width: 24em; }
+.lock-form { display: flex; gap: 10px; margin-top: 24px; position: relative; }
+.lock-form input {
+  flex: 1;
+  min-width: 0;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  padding: 13px 20px;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 18px;
+  letter-spacing: 0.22em;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.lock-form input::placeholder { letter-spacing: 0.08em; font-size: 13px; color: var(--dim); }
+.lock-form input:focus { border-color: var(--orange); box-shadow: 0 0 0 3px rgba(255, 122, 24, 0.16); }
+.lock-error { min-height: 22px; margin-top: 12px; color: var(--red); font-size: 12.5px; letter-spacing: 0.04em; }
+.lock-hint { margin-top: 18px; font-size: 11px; color: var(--dim); letter-spacing: 0.1em; }
+.lock-card.is-error { animation: lockShake 0.36s ease; }
+@keyframes lockShake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-7px); }
+  50% { transform: translateX(6px); }
+  80% { transform: translateX(-3px); }
+}
+
+/* ==========================================================================
    标题页
    ========================================================================== */
 #screen-title { position: relative; overflow: hidden; display: none; }

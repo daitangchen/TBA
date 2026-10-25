@@ -819,6 +819,7 @@
         <button class="btn btn-ghost btn-block" data-close="1">继续游戏</button>
         <button class="btn btn-ghost btn-block" id="btn-back-title">保存并回到标题</button>
         <button class="btn btn-ghost btn-block" id="btn-restart">重新开始（清空存档）</button>
+        <button class="btn btn-ghost btn-block" id="btn-lock">锁定游戏</button>
       </div>`);
     $('#btn-back-title').addEventListener('click', () => {
       Game.save(Game.state);
@@ -833,6 +834,12 @@
         Game.state = null;
         show('screen-title');
         renderTitle();
+      });
+    });
+    $('#btn-lock').addEventListener('click', () => {
+      closeModal(() => {
+        setUnlocked(false);
+        showLockScreen();
       });
     });
   }
@@ -983,10 +990,66 @@
   }
 
   /* ============================================================
-   * 启动
+   * 启动：先过密钥门，再进入游戏
    * ============================================================ */
+  const UNLOCK_KEY = 'tba_access_v1';
+
+  function isUnlocked() {
+    try { return global.localStorage.getItem(UNLOCK_KEY) === '1'; } catch (e) { return false; }
+  }
+  function setUnlocked(v) {
+    try {
+      if (v) global.localStorage.setItem(UNLOCK_KEY, '1');
+      else global.localStorage.removeItem(UNLOCK_KEY);
+    } catch (e) { /* 隐私模式下忽略 */ }
+  }
+
+  function showLockScreen() {
+    show('screen-lock');
+    const input = $('#key-input');
+    const btn = $('#btn-unlock');
+    const err = $('#lock-error');
+    const card = document.querySelector('.lock-card');
+    if (!input || !btn) return;
+    input.value = '';
+    err.textContent = '';
+
+    const submit = () => {
+      const val = (input.value || '').trim();
+      if (val === TBA.ACCESS_KEY) {
+        setUnlocked(true);
+        err.textContent = '';
+        startApp();
+        return;
+      }
+      err.textContent = '密钥不对，再试一次。';
+      if (card) {
+        card.classList.remove('is-error');
+        void card.offsetWidth;
+        card.classList.add('is-error');
+      }
+      input.select();
+    };
+
+    btn.onclick = submit;
+    input.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); submit(); } };
+    setTimeout(() => input.focus(), 60);
+  }
+
   function init() {
     bind();
+    const params = new URLSearchParams(global.location.search);
+    // ?key= 方便演示与截图，仍然需要正确的密钥
+    if (params.get('key') === TBA.ACCESS_KEY) setUnlocked(true);
+
+    if (!isUnlocked()) {
+      showLockScreen();
+      return;
+    }
+    startApp();
+  }
+
+  function startApp() {
     renderTitle();
 
     // 演示模式：?demo=main / ?demo=team / ?demo=session / ?demo=school / ?demo=end

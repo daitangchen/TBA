@@ -4,14 +4,31 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>TBA 模拟器 · 篮途</title>
-  <meta name="description" content="高三这一年，从到场 15 人里临时组队的班级篮球模拟经营游戏：赛历、每场组队、3v3 比赛。" />
+  <meta name="description" content="高三这一年，从到场 15 人里分三队打车轮战的班级篮球模拟经营游戏。" />
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='46' fill='%23ff7a18'/><path d='M4 50h92M50 4v92M14 20c22 18 22 42 0 60M86 20c-22 18-22 42 0 60' stroke='%23090d16' stroke-width='5' fill='none'/></svg>" />
   <link rel="stylesheet" href="assets/css/style.css" />
 </head>
 <body>
   <div id="app">
+    <!-- ============ 密钥页 ============ -->
+    <section id="screen-lock" class="screen is-active">
+      <div class="lock-shell">
+        <div class="lock-card">
+          <p class="eyebrow">TBA SIMULATOR · ACCESS</p>
+          <h1 class="lock-title">输入密钥</h1>
+          <p class="lock-sub">这是高三班级内部的赛季模拟器，输入密钥后才能进入。</p>
+          <div class="lock-form">
+            <input id="key-input" type="password" inputmode="numeric" autocomplete="off" spellcheck="false" placeholder="请输入密钥" maxlength="32" />
+            <button class="btn btn-primary" id="btn-unlock">进入</button>
+          </div>
+          <p class="lock-error" id="lock-error"></p>
+          <p class="lock-hint">密钥由球队经理保管</p>
+        </div>
+      </div>
+    </section>
+
     <!-- ============ 标题页 ============ -->
-    <section id="screen-title" class="screen is-active">
+    <section id="screen-title" class="screen">
       <div class="court-bg" aria-hidden="true"></div>
       <div class="title-shell">
         <header class="title-top">
@@ -21,7 +38,7 @@
 
         <div class="title-main">
           <div class="title-copy">
-            <p class="eyebrow">SENIOR YEAR · 雏形版 v1.1.7</p>
+            <p class="eyebrow">SENIOR YEAR · 雏形版 v1.2.0</p>
             <h1>篮途<em>模拟器</em></h1>
             <p class="lead">高三这一年，体育课只有四十分钟，考试周却能天天打球。<br />你叫大娘，建队核心之一，也是场上的大前锋。</p>
 

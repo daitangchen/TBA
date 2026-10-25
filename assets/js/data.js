@@ -9,8 +9,11 @@
   'use strict';
   const TBA = (global.TBA = global.TBA || {});
 
-  TBA.VERSION = '1.1.7';
+  TBA.VERSION = '1.2.0';
   TBA.TITLE = 'TBA 模拟器';
+
+  /* 进入游戏需要输入的密钥（本地校验，属于软门槛） */
+  TBA.ACCESS_KEY = '195022008256';
 
   /* ============================================================
    * 一、赛历（来自 schedule.md）
