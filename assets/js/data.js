@@ -9,7 +9,7 @@
   'use strict';
   const TBA = (global.TBA = global.TBA || {});
 
-  TBA.VERSION = '1.2.0';
+  TBA.VERSION = '1.2.1';
   TBA.TITLE = 'TBA 模拟器';
 
   /* 进入游戏需要输入的密钥（本地校验，属于软门槛） */

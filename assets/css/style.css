@@ -922,6 +922,9 @@ b, strong { font-weight: 700; }
 
 /* 左下角：球员数据榜 */
 .left-column { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.restart-btn { color: var(--muted); font-size: 12.5px; letter-spacing: 0.06em; }
+.restart-btn .restart-ico { color: var(--orange-2); font-size: 15px; line-height: 1; }
+.restart-btn:hover { color: var(--red); border-color: rgba(255, 93, 108, 0.45); background: rgba(255, 93, 108, 0.05); }
 .stats-panel .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
 .stats-panel .panel-title { margin-bottom: 0; }
 .stat-tabs { display: flex; gap: 3px; background: rgba(255, 255, 255, 0.04); border-radius: 8px; padding: 3px; }

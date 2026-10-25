@@ -845,6 +845,25 @@
   }
 
   /* ============================================================
+   * 重新开始
+   * ============================================================ */
+  function openRestartConfirm() {
+    openModal(`${modalHead('重新从头开始', '当前赛季进度会清空，且无法恢复')}
+      <p class="muted">要从 2025 年 7 月 2 日重新开始吗？球员数据、战绩、积分榜都会清零。</p>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" data-close="1">取消</button>
+        <button class="btn btn-primary" id="btn-confirm-restart">重新开始</button>
+      </div>`);
+    $('#btn-confirm-restart').addEventListener('click', () => {
+      closeModal();
+      Game.clearSave();
+      Game.state = null;
+      Game.create();
+      render();
+    });
+  }
+
+  /* ============================================================
    * 结算页
    * ============================================================ */
   function renderEnd() {
@@ -961,6 +980,7 @@
     });
     $('#btn-rules-main').addEventListener('click', openRules);
     $('#btn-menu').addEventListener('click', openMenu);
+    $('#btn-restart-quick').addEventListener('click', openRestartConfirm);
 
     // 结算页（动态元素用事件委托）
     $('#screen-end').addEventListener('click', e => {
