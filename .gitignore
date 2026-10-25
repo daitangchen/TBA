@@ -6,3 +6,6 @@ Desktop.ini
 # WPS 临时锁文件
 ~$*
 *.tmp
+
+# 本地开发 / 截图临时目录
+.tmp/

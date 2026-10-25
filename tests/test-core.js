@@ -1,0 +1,110 @@
+/*!
+ * TBA 模拟器 · 核心逻辑测试
+ * 运行：node tests/test-core.js
+ */
+const path = require('path');
+require(path.join(__dirname, '..', 'assets', 'js', 'data.js'));
+require(path.join(__dirname, '..', 'assets', 'js', 'core.js'));
+
+const TBA = globalThis.TBA;
+const { calendar, game: Game, draft: Draft } = TBA;
+
+let failures = 0;
+function check(name, cond, extra) {
+  console.log((cond ? 'PASS ' : 'FAIL ') + name + (extra !== undefined ? '  ' + extra : ''));
+  if (!cond) failures++;
+}
+
+function quickDraft(s) {
+  let guard = 0;
+  while (s.phase === 'draft' && guard++ < 120) {
+    if (s.draft.stage === 'lock') { Draft.humanLock(s, null); continue; }
+    const r = Draft.step(s);
+    if (r.type === 'human') {
+      const best = s.draft.pool.map(id => s.players[id]).sort((a, b) => b.overall - a.overall)[0];
+      Draft.humanPick(s, best.id);
+    }
+  }
+}
+
+/* ---------- 1. 赛历 ---------- */
+const cases = [
+  ['2025-07-02', false, '留校周三'],
+  ['2025-07-03', true, '留校周四'],
+  ['2025-07-11', false, '留校最后一天'],
+  ['2025-07-12', false, '暑假'],
+  ['2025-08-28', true, '小考试'],
+  ['2025-08-30', true, '小考试 + 留校最后一天（考试优先）'],
+  ['2025-09-02', true, '周二体育课'],
+  ['2025-09-07', true, '周日体育课'],
+  ['2025-09-08', false, '周一'],
+  ['2025-10-31', true, '大考试'],
+  ['2026-02-04', false, '寒假留校前一天'],
+  ['2026-02-05', true, '寒假留校周四'],
+  ['2026-02-10', false, '寒假留校最后一天'],
+  ['2026-03-01', true, '小考试'],
+  ['2026-06-09', true, '赛季最后一天（周二）']
+];
+console.log('\n=== 赛历（schedule.md） ===');
+cases.forEach(([d, want, note]) => {
+  const info = calendar.dayInfo(d);
+  check(`${d} playable=${info.playable} (${note})`, info.playable === want, info.reason);
+});
+
+/* ---------- 2. 球员 ---------- */
+console.log('\n=== 球员（球员信息表.et） ===');
+const players = TBA.engine.buildPlayers();
+const list = Object.values(players).sort((a, b) => b.overall - a.overall);
+list.forEach(p => console.log(`${p.name}\t${p.pos}\t${p.h}cm ${p.w}kg\t综合 ${p.overall}\t${p.trait}`));
+check('球员数量 22', list.length === 22, list.length);
+check('建队核心 3 人', list.filter(p => p.core).length === 3);
+
+/* ---------- 3. 选秀 ---------- */
+console.log('\n=== 选秀（rules.png） ===');
+const state = Game.create();
+check('选秀顺序 12 签', state.draft.seq.length === 12, state.draft.seq.join(''));
+check('选秀顺序符合 ABC ABC BCA CAB', state.draft.seq.map(t => Draft.batchOfTeam(state.draft, t)).join('') === TBA.DRAFT_ORDER.join(''));
+quickDraft(state);
+check('选秀完成进入赛季', state.phase === 'season', state.phase);
+state.teams.forEach(t => {
+  console.log(`${t.name}: ${t.roster.map(id => players[id].name + '(' + players[id].overall + ')').join(' / ')}`);
+  check(`${t.name} 阵容 5 人`, t.roster.length === 5, t.roster.length);
+});
+
+/* ---------- 4. 比赛模拟 ---------- */
+console.log('\n=== 比赛模拟（30 场） ===');
+const scores = [];
+for (let i = 0; i < 30; i++) {
+  const s = Game.create();
+  quickDraft(s);
+  const res = Game.playMatch(s, 'T2');
+  if (res) scores.push([res.scoreH, res.scoreA]);
+}
+console.log(scores.map(s => s.join(':')).join('  '));
+const avgH = scores.reduce((a, s) => a + s[0], 0) / scores.length;
+const avgA = scores.reduce((a, s) => a + s[1], 0) / scores.length;
+const minScore = Math.min(...scores.flat());
+check('比分下限合理（>= 5）', minScore >= 5, 'min ' + minScore);
+check('平均总得分 28 - 50', avgH + avgA >= 28 && avgH + avgA <= 50, `avg ${avgH.toFixed(1)}:${avgA.toFixed(1)}`);
+check('胜负有区分（30 场中双方都赢过）', scores.some(s => s[0] > s[1]) && scores.some(s => s[1] > s[0]));
+
+/* ---------- 5. 整季推进 ---------- */
+console.log('\n=== 整季推进 ===');
+const s3 = Game.create();
+quickDraft(s3);
+let days = 0, drafts = 0, matches = 0;
+while (s3.phase === 'season' && days++ < 400) {
+  const info = calendar.dayInfo(s3.date);
+  const opps = Game.playableOpponents(s3);
+  if (info.playable && Game.canField(s3, 'T1') && opps.length) { Game.playMatch(s3, opps[0].id); matches++; }
+  else Game.rest(s3);
+  if (s3.phase === 'draft') { drafts++; quickDraft(s3); }
+}
+console.log('结束日期', s3.date, '阶段', s3.phase, '比赛', matches, '中期选秀', drafts);
+check('赛季在 2026-06 结束', s3.phase === 'end' && s3.date > '2026-06-09', s3.date);
+check('触发中期选秀', drafts === 1, drafts);
+check('赛季有足够比赛', matches > 60, matches);
+Game.standings(s3).forEach(t => console.log(`${t.name}\t${t.wins}胜${t.losses}负\t${t.pf}:${t.pa}`));
+
+console.log('\n' + (failures === 0 ? '全部通过 ✅' : failures + ' 项失败 ❌'));
+process.exit(failures === 0 ? 0 : 1);

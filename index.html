@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>TBA 模拟器 · 篮途</title>
+  <meta name="description" content="基于 2025—2026 赛季班级篮球联盟的模拟经营游戏原型：赛历、选秀、3v3 比赛。" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='46' fill='%23ff7a18'/><path d='M4 50h92M50 4v92M14 20c22 18 22 42 0 60M86 20c-22 18-22 42 0 60' stroke='%23090d16' stroke-width='5' fill='none'/></svg>" />
+  <link rel="stylesheet" href="assets/css/style.css" />
+</head>
+<body>
+  <div id="app">
+    <!-- ============ 标题页 ============ -->
+    <section id="screen-title" class="screen is-active">
+      <div class="court-bg" aria-hidden="true"></div>
+      <div class="title-shell">
+        <header class="title-top">
+          <span class="brand-mark">TBA</span>
+          <span class="brand-sub">班级篮球联盟 · 2025—2026 赛季</span>
+        </header>
+
+        <div class="title-main">
+          <div class="title-copy">
+            <p class="eyebrow">BASKETBALL SIMULATOR · 雏形版 v1.0.0</p>
+            <h1>篮途<em>模拟器</em></h1>
+            <p class="lead">体育课只有四十分钟，考试周却能天天打球。<br />你叫大娘，球队的总经理，也是首发大前锋。</p>
+
+            <div class="title-actions">
+              <button class="btn btn-primary" id="btn-new">开始新游戏</button>
+              <button class="btn btn-ghost" id="btn-continue" hidden>继续存档</button>
+              <button class="btn btn-ghost" id="btn-rules">规则与设定</button>
+            </div>
+            <p class="hint" id="save-hint">第一次踏上球场？先从选秀大会开始。</p>
+          </div>
+
+          <div class="title-side">
+            <div class="char-card is-selected">
+              <div class="char-avatar">大</div>
+              <div class="char-meta">
+                <span class="chip chip-live">本轮可选</span>
+                <h2>大娘</h2>
+                <p class="char-line">总经理 / 锋线 · 185cm · 100kg</p>
+                <p class="char-trait">特性 · 场上教练</p>
+              </div>
+            </div>
+            <div class="locked-row">
+              <div class="locked-card"><b>奶龙</b><small>待解锁</small></div>
+              <div class="locked-card"><b>走刀</b><small>待解锁</small></div>
+            </div>
+            <div class="season-strip" id="season-strip"></div>
+          </div>
+        </div>
+
+        <footer class="title-foot">
+          <span>数据来源：球员信息表.et / schedule.md / rules.png</span>
+          <span>键盘：Esc 关闭弹窗</span>
+        </footer>
+      </div>
+    </section>
+
+    <!-- ============ 选秀页 ============ -->
+    <section id="screen-draft" class="screen">
+      <div class="draft-shell">
+        <header class="draft-header">
+          <div>
+            <p class="eyebrow" id="draft-eyebrow">2025 年 7 月 2 日 · 暑假留校</p>
+            <h2 id="draft-title">选秀大会</h2>
+          </div>
+          <div class="batch-row" id="draft-batches"></div>
+          <div class="draft-counter" id="draft-counter"></div>
+        </header>
+
+        <div class="draft-grid">
+          <aside class="draft-side">
+            <div id="draft-lockpanel"></div>
+            <div class="panel">
+              <h3 class="panel-title">选秀顺位 <span class="muted">ABC ABC BCA CAB</span></h3>
+              <ol class="pick-log" id="draft-log"></ol>
+            </div>
+          </aside>
+
+          <div class="draft-center">
+            <div class="pool-head">
+              <h3 class="panel-title">可选球员 <span class="muted" id="pool-count"></span></h3>
+              <div class="pool-legend" id="pool-legend"></div>
+            </div>
+            <div class="pool-grid" id="draft-pool"></div>
+          </div>
+
+          <aside class="draft-side">
+            <div class="panel">
+              <h3 class="panel-title">我的球队</h3>
+              <div class="mini-roster" id="draft-roster"></div>
+            </div>
+            <div class="panel panel-tip">
+              <h3 class="panel-title">规则速览</h3>
+              <ul class="rule-list">
+                <li><b>批次</b>按最近一次战绩：输得最多的拿 A 批（最优顺位）。</li>
+                <li><b>锁定</b>可保留上一轮一名球员，但不能是上一轮的第一顺位。</li>
+                <li><b>锁定后</b>该球员直接充当本轮第一顺位。</li>
+              </ul>
+            </div>
+          </aside>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 主界面 ============ -->
+    <section id="screen-main" class="screen">
+      <header class="topbar">
+        <div class="brand">
+          <span class="brand-mark small">TBA</span>
+          <span class="brand-name">篮途</span>
+        </div>
+        <div class="topbar-info">
+          <div class="top-date" id="top-date"></div>
+          <div class="top-sub" id="top-sub"></div>
+        </div>
+        <div class="topbar-right">
+          <div class="top-record" id="top-record"></div>
+          <button class="icon-btn" id="btn-rules-main" title="规则与设定">规则</button>
+          <button class="icon-btn" id="btn-menu" title="菜单">菜单</button>
+        </div>
+      </header>
+
+      <main class="layout">
+        <section class="panel calendar-panel">
+          <div class="panel-head">
+            <h3 class="panel-title">赛历</h3>
+            <div class="month-nav">
+              <button class="nav-btn" id="btn-prev-month" title="上个月">‹</button>
+              <span id="month-label"></span>
+              <button class="nav-btn" id="btn-next-month" title="下个月">›</button>
+            </div>
+          </div>
+          <div class="calendar-weekdays">
+            <span>日</span><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span>
+          </div>
+          <div class="calendar-grid" id="calendar-grid"></div>
+          <div class="legend">
+            <span><i class="dot dot-play"></i>可打球</span>
+            <span><i class="dot dot-exam"></i>考试周</span>
+            <span><i class="dot dot-stay"></i>留校</span>
+            <span><i class="dot dot-vac"></i>假期</span>
+          </div>
+          <div class="next-play" id="next-play"></div>
+        </section>
+
+        <section class="day-column">
+          <div class="panel day-panel" id="day-panel"></div>
+          <div class="panel actions-panel" id="actions-panel"></div>
+          <div class="panel event-panel" id="event-panel" hidden></div>
+          <div class="panel recent-panel" id="recent-panel"></div>
+        </section>
+
+        <aside class="side-column">
+          <div class="panel team-panel" id="team-panel"></div>
+          <div class="panel standings-panel" id="standings-panel"></div>
+          <div class="panel feed-panel">
+            <h3 class="panel-title">联盟动态</h3>
+            <ul class="feed" id="feed-list"></ul>
+          </div>
+        </aside>
+
+        <section class="panel timeline-panel" id="timeline-panel"></section>
+      </main>
+    </section>
+
+    <!-- ============ 赛季结束 ============ -->
+    <section id="screen-end" class="screen">
+      <div class="end-shell" id="end-shell"></div>
+    </section>
+  </div>
+
+  <div id="modal-root" class="modal-root"></div>
+
+  <script src="assets/js/data.js"></script>
+  <script src="assets/js/core.js"></script>
+  <script src="assets/js/ui.js"></script>
+</body>
+</html>
