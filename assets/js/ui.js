@@ -258,7 +258,14 @@
     if (!st || st.phase !== 'draft' || !st.draft) return;
     if (st.draft.stage === 'lock') return;
     const slot = Draft.currentSlot(st);
-    if (!slot) { draftComplete(); return; }
+    if (!slot) {
+      // 已经没有签位：让状态机执行最后一步 finishDraft
+      // （分配阵容、随机补位、把阶段切到 season），否则会卡在选秀页
+      if (st.draft) Draft.step(st);
+      Game.save(st);
+      draftComplete();
+      return;
+    }
     const team = st.teams.find(t => t.id === slot.teamId);
     if (team.human) return;
     if (UI.draftBusy) return;
@@ -278,25 +285,33 @@
     const st = Game.state;
     if (UI.summaryShown) return;
     UI.summaryShown = true;
+    const lastDraft = st.draftHistory[st.draftHistory.length - 1] || { bonus: [] };
+    const bonusMap = {};
+    (lastDraft.bonus || []).forEach(b => { bonusMap[b.playerId] = true; });
+
     const rows = st.teams.map(t => `
-      <div style="margin-top:14px">
-        <div style="display:flex;justify-content:space-between;margin-bottom:8px">
-          <b style="font-size:14px">${esc(t.name)}</b>
-          <span class="muted" style="font-size:12px">${t.roster.map(id => st.players[id].name).join(' · ')}</span>
+      <div class="sum-team">
+        <div class="sum-head">
+          <b>${esc(t.name)}</b>
+          <span class="muted">${t.roster.length} 人</span>
         </div>
-        <div class="mini-roster">
+        <div class="sum-chips">
           ${t.roster.map(id => {
             const p = st.players[id];
-            return `<div class="mini-player"><span class="mini-ovr">${p.overall}</span>
-              <div><div class="mini-name">${esc(p.name)}</div><small class="muted">${p.pos} · ${p.h}cm · ${esc(p.trait || '')}</small></div>
-              <span class="mini-pos">${p.core ? '建队核心' : ''}</span></div>`;
+            const cls = p.core ? 'is-core' : bonusMap[p.id] ? 'is-bonus' : '';
+            const tag = p.core ? '核心' : bonusMap[p.id] ? '随机补位' : '';
+            return `<div class="sum-chip ${cls}">
+              <span class="ovr">${p.overall}</span>
+              <span class="nm">${esc(p.name)}</span>
+              ${tag ? `<em>${tag}</em>` : ''}
+            </div>`;
           }).join('')}
         </div>
       </div>`).join('');
 
-    openModal(`${modalHead('选秀大会结束', '三支球队组建完毕，赛季即将开始')}
+    openModal(`${modalHead('选秀大会结束', '建队核心 + 4 个顺位 + 1 个随机补位，每队 6 人')}
       ${rows}
-      <div class="modal-actions">
+      <div class="modal-actions is-sticky">
         <button class="btn btn-primary" id="btn-draft-done">进入赛季</button>
       </div>`, { wide: true, onClose: render });
     const btn = $('#btn-draft-done');
@@ -688,7 +703,7 @@
           <li>三支球队分为 A / B / C 三个批次，优先级依次递减；批次由最近一次比赛结果决定，输得最多的拿 A。</li>
           <li>选秀顺序：<code>ABC ABC BCA CAB</code>，共 12 个签位，每队 4 人。</li>
           <li>锁定：选秀前可锁定上一轮自己的一名球员，至多一人，不能是上一轮自己的第一顺位；锁定后该球员充当本轮第一顺位。</li>
-          <li>交易市场：v1.0.0 雏形暂未实现，排在 v1.1 计划里。</li>
+          <li>交易市场：v1.1.2 暂未实现，排在后续版本计划里。</li>
         </ul>
         <h4>三、比赛</h4>
         <ul>
@@ -925,6 +940,13 @@
           }
         };
         autoDraft();
+
+        if (demo === 'summary') {
+          Game.save(st);
+          render();
+          draftComplete();
+          return;
+        }
 
         const playSeason = untilDraft => {
           let guard = 0;

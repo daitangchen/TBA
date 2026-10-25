@@ -46,7 +46,7 @@ check('2026-02-05 触发中期选秀', st.phase === 'draft' && st.draft.round ==
 const d = st.draft;
 check('进入锁定阶段', d.stage === 'lock');
 const allowed = d.previous.rosterAfter[human.id].filter(id => id !== d.previous.firstPick[human.id]);
-check('可锁定 3 人（不含上一轮第一顺位）', allowed.length === 3, allowed.length);
+check('可锁定 4 人（不含上一轮第一顺位）', allowed.length === 4, allowed.length);
 
 const lockId = allowed[0];
 console.log('锁定', st.players[lockId].name, '| 批次', JSON.stringify(d.batches));

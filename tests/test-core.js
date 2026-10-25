@@ -68,8 +68,13 @@ quickDraft(state);
 check('选秀完成进入赛季', state.phase === 'season', state.phase);
 state.teams.forEach(t => {
   console.log(`${t.name}: ${t.roster.map(id => players[id].name + '(' + players[id].overall + ')').join(' / ')}`);
-  check(`${t.name} 阵容 5 人`, t.roster.length === 5, t.roster.length);
+  check(`${t.name} 阵容 6 人（核心 + 5 新秀）`, t.roster.length === 6, t.roster.length);
 });
+
+const bonus = state.draftHistory[0].bonus || [];
+check('每队随机补位 1 人（共 3 人）', bonus.length === 3, bonus.length);
+check('剩余自由球员 4 人', state.freeAgents.length === 4, state.freeAgents.length);
+check('补位球员都在各自球队里', bonus.every(b => state.teams.find(t => t.id === b.teamId).roster.indexOf(b.playerId) >= 0));
 
 /* ---------- 4. 比赛模拟 ---------- */
 console.log('\n=== 比赛模拟（30 场） ===');

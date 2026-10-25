@@ -597,6 +597,27 @@
       const picked = d.picks.filter(p => p.teamId === t.id).map(p => p.playerId);
       t.roster = [t.core].concat(picked);
       t.roster = Array.from(new Set(t.roster));
+    });
+
+    // rules.png 只规定了四个顺位：每队再从剩余球员里随机补进一人，
+    // 凑满五名新秀（加建队核心共六人）
+    const bonus = [];
+    const leftover = d.pool.slice().filter(id => {
+      for (const t of state.teams) if (t.roster.indexOf(id) >= 0) return false;
+      return true;
+    });
+    const bonusOrder = shuffle(state.teams.map(t => t.id));
+    bonusOrder.forEach(tid => {
+      if (!leftover.length) return;
+      const idx = Math.floor(Math.random() * leftover.length);
+      const pid = leftover.splice(idx, 1)[0];
+      const team = state.teams.find(t => t.id === tid);
+      team.roster.push(pid);
+      bonus.push({ teamId: tid, playerId: pid });
+    });
+
+    // 新阵容统一恢复状态
+    state.teams.forEach(t => {
       t.roster.forEach(id => {
         const p = state.players[id];
         if (p) { p.stamina = Math.max(p.stamina, 85); p.injury = 0; }
@@ -619,10 +640,16 @@
       picks: d.picks.slice(),
       firstPick,
       rosterBefore,
-      rosterAfter
+      rosterAfter,
+      bonus
     });
 
-    state.freeAgents = d.pool.slice();
+    bonus.forEach(b => {
+      const team = state.teams.find(t => t.id === b.teamId);
+      Game.log(state, `随机补位：${state.players[b.playerId].name} 加入 ${team.name}。`, 'draft');
+    });
+
+    state.freeAgents = leftover;
     state.draft = null;
     state.phase = 'season';
     Game.log(state, d.round === 1 ? '选秀大会结束，三支球队组建完毕。' : '中期选秀结束，联盟进入下半程。');

@@ -9,7 +9,7 @@
   'use strict';
   const TBA = (global.TBA = global.TBA || {});
 
-  TBA.VERSION = '1.0.0';
+  TBA.VERSION = '1.1.2';
   TBA.TITLE = 'TBA 模拟器';
 
   /* ============================================================
