@@ -84,6 +84,12 @@ check('计时从 0 开始', sess.elapsed === 0);
 
 const g1 = Game.sessionPlay(s);
 check('第一场打完', !!g1, g1 && `${g1.game.scoreH}:${g1.game.scoreA}`);
+check('每场都有球员数据', !!g1 && g1.result.boxH.length === 5 && g1.result.boxA.length === 5);
+check('每个球员都有分/板/助', !!g1 && g1.result.boxH.every(r => typeof r.pts === 'number' && typeof r.reb === 'number' && typeof r.ast === 'number'));
+check('每次进攻都有记录', !!g1 && g1.result.plays.length > 0 && g1.result.plays.every(p => p.text && p.score));
+check('进攻记录带比分', !!g1 && /^\d+-\d+$/.test(g1.result.plays[0].score), g1 && g1.result.plays[0].score);
+check('战报里存了本场数据', !!g1 && !!g1.game.detail && g1.game.detail.plays.length === g1.result.plays.length);
+check('赛季数据开始累计', Object.keys(s.playerStats).length > 0, Object.keys(s.playerStats).length + ' 人');
 check('赢的留在场上', s.session.court.indexOf(g1.game.winnerId) >= 0);
 check('输的下场等待', s.session.waiting === g1.game.loserId);
 check('原来的场下队伍上场', s.session.court.indexOf('T1') >= 0 || s.session.court.length === 2);

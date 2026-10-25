@@ -19,7 +19,8 @@
     calMonth: null,
     lastDate: null,
     buildTimer: null,
-    buildBusy: false
+    buildBusy: false,
+    statTab: 'pts'
   };
 
   /* ============================================================
@@ -162,6 +163,44 @@
     renderEventPanel(st);
     renderTimeline(st);
     renderRecent(st);
+    renderStatsPanel(st);
+  }
+
+  /* 左下角：赛季累计球员数据 */
+  function renderStatsPanel(st) {
+    const el = $('#stats-panel');
+    if (!el) return;
+    const stats = st.playerStats || {};
+    const tab = UI.statTab || 'pts';
+    const LABEL = { pts: '得分', reb: '篮板', ast: '助攻' };
+
+    const rows = Object.keys(stats)
+      .map(id => {
+        const p = st.players[id];
+        const s = stats[id];
+        return p && s && s.gp > 0 ? { id: Number(id), p, ...s } : null;
+      })
+      .filter(Boolean)
+      .sort((a, b) => b[tab] - a[tab])
+      .slice(0, 8);
+
+    el.innerHTML = `
+      <div class="panel-head">
+        <h3 class="panel-title">球员数据榜</h3>
+        <div class="stat-tabs">
+          ${['pts', 'reb', 'ast'].map(k => `<button class="stat-tab ${tab === k ? 'is-active' : ''}" data-stat-tab="${k}">${LABEL[k]}</button>`).join('')}
+        </div>
+      </div>
+      <div class="stats-list">
+        ${rows.length ? rows.map((r, i) => `
+          <div class="stat-row" data-player="${r.id}">
+            <span class="stat-rank">${i + 1}</span>
+            <span class="stat-name">${esc(r.p.name)}</span>
+            <span class="stat-gp">${r.gp} 场</span>
+            <b class="stat-val">${r[tab]}</b>
+          </div>`).join('') : '<div class="muted" style="font-size:12px;line-height:1.7">还没有比赛数据。<br />打一场车轮战就会开始累计。</div>'}
+      </div>
+      <div class="stats-foot">赛季累计 · 点球员看属性</div>`;
   }
 
   function renderRecent(st) {
@@ -593,6 +632,39 @@
         return `<li><span class="sr-no">${g.no}</span><span class="sr-teams">${esc(w.name)} <b>${Math.max(g.scoreH, g.scoreA)}:${Math.min(g.scoreH, g.scoreA)}</b> ${esc(l.name)}</span><span class="sr-min">${g.minutes}′</span></li>`;
       }).join('');
 
+      const last = s.games[s.games.length - 1];
+      let detailHtml = '<div class="game-detail is-empty">打完一场后，这里会显示球员数据和逐回合赛况。</div>';
+      if (last && last.detail) {
+        const d = last.detail;
+        const home = Game.teamById(st, last.homeId);
+        const away = Game.teamById(st, last.awayId);
+        const boxTable = (team, rows) => `
+          <div class="gd-box">
+            <div class="gd-box-head">${esc(team.name)}</div>
+            <table class="box-table">
+              <thead><tr><th>球员</th><th>分</th><th>板</th><th>助</th></tr></thead>
+              <tbody>${rows.map(r => `<tr class="${d.mvp.id === r.id ? 'is-mvp' : ''}"><td>${esc(r.name)}</td><td>${r.pts}</td><td>${r.reb}</td><td>${r.ast}</td></tr>`).join('')}</tbody>
+            </table>
+          </div>`;
+        detailHtml = `
+          <div class="game-detail">
+            <div class="gd-title">
+              <span>第 ${last.no} 场 · ${esc(home.name)} <b>${last.scoreH} : ${last.scoreA}</b> ${esc(away.name)}</span>
+              <span class="gd-mvp">MVP ${esc(d.mvp.name)}（${d.mvp.pts} 分 ${d.mvp.reb} 板）</span>
+            </div>
+            <div class="gd-boxes">${boxTable(home, d.boxH)}${boxTable(away, d.boxA)}</div>
+            <details class="gd-plays" open>
+              <summary>逐回合赛况（${d.plays.length} 次进攻）</summary>
+              <ol class="play-list">
+                ${d.plays.map(p => `<li><span class="pl-no">${p.no}</span><span class="pl-text">${esc(p.text)}</span><span class="pl-score">${p.score}</span></li>`).join('')}
+              </ol>
+            </details>
+          </div>`;
+      }
+
+      const waitingTeam = Game.teamById(st, s.waiting);
+      const waitingNames = (s.teams[s.waiting] || []).map(id => st.players[id].name).join(' · ');
+
       body.innerHTML = `
         <div class="session-clock">
           <div class="sc-top"><span>已打 <b>${s.elapsed}</b> / ${s.limit} 分钟</span><span>${s.games.length} 场 · ${s.finished ? '时间到' : '继续'}</span></div>
@@ -603,9 +675,14 @@
           <div class="session-vs">VS</div>
           ${sessionTeamBlock(st, b, '场上')}
         </div>
-        <div class="session-waiting">${sessionTeamBlock(st, s.waiting, '场下等待 · 输的一方下场后上场')}</div>
+        <div class="session-waiting-bar">
+          <span class="sw-label">场下等待</span>
+          <b>${esc(waitingTeam.name)}</b>
+          <span class="sw-names">${esc(waitingNames)}</span>
+        </div>
+        ${detailHtml}
         <div class="session-results">
-          <h4>本场战报</h4>
+          <h4>今日战报</h4>
           <ul class="session-log">${results || '<li class="muted">还没有开打</li>'}</ul>
         </div>`;
 
@@ -855,6 +932,12 @@
       if (e.target.closest('[data-skip]')) {
         Game.skip(Game.state);
         render();
+        return;
+      }
+      const tabBtn = e.target.closest('[data-stat-tab]');
+      if (tabBtn) {
+        UI.statTab = tabBtn.dataset.statTab;
+        renderStatsPanel(Game.state);
         return;
       }
       const rosterRow = e.target.closest('[data-player]');

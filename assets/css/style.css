@@ -797,6 +797,21 @@ b, strong { font-weight: 700; }
 .session-vs { align-self: center; font-family: var(--mono); color: var(--dim); font-size: 12px; }
 .session-waiting { margin-top: 12px; }
 .session-waiting .session-team { opacity: 0.75; }
+.session-waiting-bar {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px dashed var(--line-strong);
+  background: rgba(255, 255, 255, 0.02);
+  font-size: 12px;
+}
+.session-waiting-bar .sw-label { font-size: 10px; letter-spacing: 0.1em; color: var(--dim); }
+.session-waiting-bar b { font-size: 13px; }
+.session-waiting-bar .sw-names { color: var(--muted); font-size: 11.5px; }
 .session-results { margin-top: 14px; }
 .session-results h4 { font-size: 12px; letter-spacing: 0.12em; color: var(--muted); margin-bottom: 8px; }
 .session-log { display: flex; flex-direction: column; gap: 5px; max-height: 190px; overflow: auto; }
@@ -844,6 +859,55 @@ b, strong { font-weight: 700; }
 }
 .teacher-note p { margin-top: 8px; font-size: 13px; color: var(--muted); line-height: 1.7; }
 .teacher-note.is-compact p { font-size: 12.5px; }
+
+/* 左下角：球员数据榜 */
+.left-column { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.stats-panel .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+.stats-panel .panel-title { margin-bottom: 0; }
+.stat-tabs { display: flex; gap: 3px; background: rgba(255, 255, 255, 0.04); border-radius: 8px; padding: 3px; }
+.stat-tab { border: none; background: transparent; color: var(--dim); font-size: 11px; padding: 3px 9px; border-radius: 6px; }
+.stat-tab:hover { color: var(--text); }
+.stat-tab.is-active { background: rgba(255, 122, 24, 0.16); color: var(--orange-2); }
+.stats-list { display: flex; flex-direction: column; gap: 4px; }
+.stat-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  background: rgba(255, 255, 255, 0.02);
+  cursor: pointer;
+}
+.stat-row:hover { background: rgba(255, 122, 24, 0.07); }
+.stat-rank { font-family: var(--mono); color: var(--dim); width: 16px; flex: none; }
+.stat-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stat-gp { margin-left: auto; color: var(--dim); font-size: 10.5px; white-space: nowrap; }
+.stat-val { font-family: var(--mono); color: var(--orange-2); width: 32px; text-align: right; }
+.stats-foot { margin-top: 8px; font-size: 10.5px; color: var(--dim); }
+
+/* 单场数据与逐回合赛况 */
+.game-detail {
+  margin-top: 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.02);
+}
+.game-detail.is-empty { font-size: 12px; color: var(--dim); text-align: center; padding: 18px; }
+.gd-title { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; font-size: 13px; margin-bottom: 10px; }
+.gd-title b { font-family: var(--mono); color: var(--orange-2); padding: 0 3px; }
+.gd-mvp { font-size: 11px; color: var(--muted); }
+.gd-boxes { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.gd-box-head { font-size: 12px; font-weight: 700; margin-bottom: 4px; }
+.gd-boxes .box-table th, .gd-boxes .box-table td { padding: 3px 5px; }
+.gd-plays { margin-top: 10px; }
+.gd-plays summary { cursor: pointer; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+.play-list { max-height: 200px; overflow: auto; display: flex; flex-direction: column; gap: 3px; padding-right: 4px; }
+.play-list li { display: flex; align-items: center; gap: 8px; font-size: 11.5px; padding: 3px 6px; border-radius: 6px; background: rgba(255, 255, 255, 0.02); }
+.pl-no { font-family: var(--mono); color: var(--dim); width: 20px; flex: none; }
+.pl-text { flex: 1; min-width: 0; color: var(--muted); }
+.pl-score { font-family: var(--mono); color: var(--text); }
 
 /* 阵容预览 */
 .matchup { display: grid; grid-template-columns: 1fr auto 1fr; gap: 14px; align-items: center; }
@@ -941,6 +1005,7 @@ b, strong { font-weight: 700; }
   .session-court { grid-template-columns: 1fr; }
   .session-vs { display: none; }
   .build-vs { text-align: center; }
+  .gd-boxes { grid-template-columns: 1fr; }
   .calendar-panel { display: none; }
   .title-actions .btn { flex: 1; }
 }

@@ -365,6 +365,7 @@
       tstats[atkKey].att += 1;
       if (isThree) tstats[atkKey].tpa += 1;
 
+      let text = '';
       if (Math.random() < prob) {
         const pts = isThree ? 3 : 2;
         b.pts += pts;
@@ -378,26 +379,29 @@
           if (mates.length) {
             const passer = weightedPick(mates, p => effAttr(p, 'spd') * 0.5 + effAttr(p, 'shot') * 0.5 + traitMod(p, 'ast', 1) * 10);
             box[passer.id].ast += 1;
-            plays.push({ side: atkKey, text: `${passer.name} 助攻 ${shooter.name} ${isThree ? '三分' : '上篮'}命中`, score: `${scoreH}-${scoreA}` });
+            text = `${passer.name} 助攻 ${shooter.name} ${isThree ? '三分' : '上篮'}命中`;
           } else {
-            plays.push({ side: atkKey, text: `${shooter.name} ${isThree ? '三分' : '强攻'}命中`, score: `${scoreH}-${scoreA}` });
+            text = `${shooter.name} ${isThree ? '三分' : '强攻'}命中`;
           }
         } else {
-          plays.push({ side: atkKey, text: `${shooter.name} ${isThree ? '三分冷箭' : '突破得手'}`, score: `${scoreH}-${scoreA}` });
+          text = `${shooter.name} ${isThree ? '三分冷箭' : '突破得手'}`;
         }
       } else if (Math.random() < 0.32) {
         // 前场篮板
         const rebounder = weightedPick(atk.lineup, p => effAttr(p, 'reb'));
         box[rebounder.id].reb += 1;
-        plays.push({ side: atkKey, text: `${rebounder.name} 抢下前场篮板`, score: `${scoreH}-${scoreA}` });
+        text = `${shooter.name} ${isThree ? '三分' : '出手'}不中，${rebounder.name} 抢下前场篮板`;
+        plays.push({ no: plays.length + 1, side: atkKey, text, score: `${scoreH}-${scoreA}` });
         possession++;
         continue; // 二次进攻，球权不变
       } else {
         const rebounder = weightedPick(def.lineup, p => effAttr(p, 'reb') * 1.1);
         box[rebounder.id].reb += 1;
+        text = `${shooter.name} ${isThree ? '三分' : '出手'}不中，${rebounder.name} 保护后场篮板`;
         offense = defKey;
       }
 
+      plays.push({ no: plays.length + 1, side: atkKey, text, score: `${scoreH}-${scoreA}` });
       possession++;
       offense = atkKey === 'H' ? 'A' : 'H';
     }
@@ -442,7 +446,7 @@
       boxH: rowsH, boxA: rowsA,
       lineupH: startH.map(p => p.id),
       lineupA: startA.map(p => p.id),
-      plays: plays.slice(-14),
+      plays,
       mvp,
       stats: tstats,
       possessions: possession,
@@ -532,6 +536,7 @@
       history: [],
       log: [],
       buffs: { hotHand: false },
+      playerStats: {},
       lastResult: null,
       lastTeam: null,
       lastSession: null,
@@ -599,6 +604,19 @@
     });
 
     if (state.buffs.hotHand && (home.human || away.human)) state.buffs.hotHand = false;
+
+    // 赛季累计球员数据
+    if (!state.playerStats) state.playerStats = {};
+    [result.boxH, result.boxA].forEach(rows => {
+      rows.forEach(r => {
+        if (!r.min) return;
+        const s = state.playerStats[r.id] || (state.playerStats[r.id] = { gp: 0, pts: 0, reb: 0, ast: 0 });
+        s.gp += 1;
+        s.pts += r.pts;
+        s.reb += r.reb;
+        s.ast += r.ast;
+      });
+    });
 
     state.history.unshift({
       date: state.date,
@@ -779,7 +797,13 @@
       scoreA: result.scoreA,
       winnerId: winner,
       loserId: loser,
-      minutes: result.minutes
+      minutes: result.minutes,
+      detail: {
+        boxH: result.boxH,
+        boxA: result.boxA,
+        plays: result.plays,
+        mvp: result.mvp
+      }
     };
     s.games.push(game);
     s.elapsed += result.minutes;
@@ -807,12 +831,18 @@
       wins >= losses ? 'win' : 'lose'
     );
     const summary = {
-      games: s.games.slice(),
+      games: s.games.map(g => ({
+        no: g.no, homeId: g.homeId, awayId: g.awayId,
+        scoreH: g.scoreH, scoreA: g.scoreA,
+        winnerId: g.winnerId, loserId: g.loserId, minutes: g.minutes
+      })),
+      lastDetail: s.games.length ? s.games[s.games.length - 1].detail : null,
+      lastGame: s.games.length ? s.games[s.games.length - 1] : null,
       elapsed: s.elapsed,
       target: s.target,
       wins,
       losses,
-      humanGames
+      humanGames: humanGames.map(g => ({ no: g.no, homeId: g.homeId, awayId: g.awayId, scoreH: g.scoreH, scoreA: g.scoreA, winnerId: g.winnerId }))
     };
     state.lastSession = summary;
     state.session = null;
