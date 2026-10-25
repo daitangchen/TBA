@@ -9,7 +9,7 @@
   'use strict';
   const TBA = (global.TBA = global.TBA || {});
 
-  TBA.VERSION = '1.1.5';
+  TBA.VERSION = '1.1.6';
   TBA.TITLE = 'TBA 模拟器';
 
   /* ============================================================
@@ -235,18 +235,23 @@
    * ============================================================ */
   TBA.CONFIG = {
     lineupSize: 3,           // 3v3
-    winScore: 21,            // 先到 21 分且领先 2 分
+    teamSize: 5,             // 每天三支车轮战球队，每队 5 人（含领袖）
+    teamsPerDay: 3,          // 到场 15 人正好分成三队
+    sessionMinutes: 45,      // 每天一轮车轮战，打满 45 分钟
+    winScore: 7,             // 平时抢 7 分
+    sundayWinScore: 21,      // 周日抢 21 分
+    minutePerPossession: 0.5,// 每次攻防折算的比赛时间（分钟）
     maxPossessions: 240,     // 安全上限
-    poolSize: 15,            // 每场比赛到场人数（含领袖）
-    picksPerTeam: 5,         // 每位领袖本轮选的人数（加上自己共 6 人）
+    poolSize: 15,            // 每天到场人数（含领袖）
     staminaStart: 100,
     staminaRest: 16,         // 每天恢复
     staminaTrain: 8,         // 训练消耗
-    staminaMatch: 20,        // 一场比赛的主力消耗
+    staminaPerGame: 4,       // 车轮战每场的主力消耗
+    staminaMatch: 20,        // 非车轮战（AI 互打）的主力消耗
     injuryThreshold: 28,
     injuryChance: 0.10,
     eventChance: 0.22,
-    aiMatchChance: 0.45      // 可打球日 AI 互打的概率
+    aiMatchChance: 0.45      // 玩家休息时 AI 互打的概率
   };
 
   /* 客串球员只在考试期间到场 */

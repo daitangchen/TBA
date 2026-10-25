@@ -325,8 +325,10 @@
       s.bench[s.bench.indexOf(best)] = weakest;
     }
 
+    const target = (opts && opts.winScore) || CFG.winScore;
+    const winBy = target >= 21 ? 2 : 1; // 抢 7 分不用领先 2 分
     while (possession < CFG.maxPossessions) {
-      if ((scoreH >= CFG.winScore || scoreA >= CFG.winScore) && Math.abs(scoreH - scoreA) >= 2) break;
+      if ((scoreH >= target || scoreA >= target) && Math.abs(scoreH - scoreA) >= winBy) break;
 
       if (possession > 0 && possession % 14 === 0) { rotate('H'); rotate('A'); }
 
@@ -430,6 +432,8 @@
       side[k].bench.forEach(p => { participants[p.id] = 0.28; });
     });
 
+    const minutes = Math.max(3, Math.round(possession * CFG.minutePerPossession));
+
     return {
       date: state.date,
       homeId, awayId,
@@ -441,6 +445,9 @@
       plays: plays.slice(-14),
       mvp,
       stats: tstats,
+      possessions: possession,
+      minutes,
+      target,
       participants
     };
   }
@@ -526,7 +533,10 @@
       log: [],
       buffs: { hotHand: false },
       lastResult: null,
-      lastTeam: null
+      lastTeam: null,
+      lastSession: null,
+      lastDayTeams: null,
+      session: null
     };
     Game.log(state, '2025 年 7 月 2 日，高三的暑假留校第一天。球场上没有固定阵容，谁来了谁上。', 'info');
     Game.state = state;
@@ -546,9 +556,9 @@
     return (state.lastTeam || []).map(id => state.players[id]).filter(Boolean);
   };
 
-  // 理论上只要健康球员够 12 个就能凑一场
+  // 三队车轮战至少要有 3 名领袖 + 每队 4 人
   Game.canStartMatch = function (state) {
-    const need = CFG.picksPerTeam * 2 + 2;
+    const need = CFG.teamSize * CFG.teamsPerDay;
     return Object.values(state.players).filter(p => p.injury <= 0).length >= need;
   };
 
@@ -561,7 +571,8 @@
     });
   };
 
-  function applyResult(state, result) {
+  function applyResult(state, result, opts) {
+    opts = opts || {};
     const home = Game.teamById(state, result.homeId);
     const away = Game.teamById(state, result.awayId);
     home.pf += result.scoreH; home.pa += result.scoreA;
@@ -570,14 +581,16 @@
     else { away.wins++; home.losses++; }
 
     const isHumanMatch = home.human || away.human;
+    const cost = opts.session ? CFG.staminaPerGame : CFG.staminaMatch;
+    const injuryChance = opts.session ? CFG.injuryChance * 0.5 : CFG.injuryChance;
 
     Object.keys(result.participants).forEach(id => {
       const p = state.players[id];
       if (!p) return;
       const factor = result.participants[id];
-      p.stamina = clamp(p.stamina - CFG.staminaMatch * factor, 0, 100);
+      p.stamina = clamp(p.stamina - cost * factor, 0, 100);
       // 建队核心不受伤：每场都得有人带队
-      if (!p.core && p.stamina < CFG.injuryThreshold && p.injury <= 0 && Math.random() < CFG.injuryChance) {
+      if (!p.core && p.stamina < CFG.injuryThreshold && p.injury <= 0 && Math.random() < injuryChance) {
         p.injury = randInt(2, 4);
         if (isHumanMatch && (result.homeId === 'T1' || result.awayId === 'T1')) {
           Game.log(state, `${p.name} 在比赛中受伤，预计缺阵 ${p.injury} 天。`, 'bad');
@@ -660,31 +673,45 @@
   };
 
   /**
-   * 纯 AI 的赛前组队（用于 AI 对 AI），返回 { pool, rosters }
+   * 每日三队车轮战：15 人分成三队，每队 5 人（领袖 + 4 轮选）
+   * 返回 { pool, teams: {T1:[],T2:[],T3:[]}, order: [队 id...] }
+   * 纯 AI 用；玩家那队由 UI 负责选。
    */
-  Game.buildMatchSetup = function (state, homeId, awayId) {
-    const home = Game.teamById(state, homeId);
-    const away = Game.teamById(state, awayId);
-    if (!home || !away) return null;
+  Game.buildDayTeams = function (state) {
     const pool = Game.buildPool(state).slice();
-    const rosters = { H: [], A: [] };
+    const ids = state.teams.map(t => t.id);
+    const order = shuffle(ids);
+    const teams = {};
+    ids.forEach(id => { teams[id] = []; });
 
-    [{ side: 'H', id: home.core }, { side: 'A', id: away.core }].forEach(({ side, id }) => {
-      const p = state.players[id];
+    // 领袖直接归队
+    state.teams.forEach(t => {
+      const p = state.players[t.core];
       if (!p) return;
-      rosters[side].push(id);
+      teams[t.id].push(t.core);
       const idx = pool.indexOf(p);
       if (idx >= 0) pool.splice(idx, 1);
     });
 
-    for (let i = 0; i < CFG.picksPerTeam * 2; i++) {
-      const side = i % 2 === 0 ? 'H' : 'A';
-      const p = Game.aiPick(state, pool, rosters[side]);
-      if (!p) break;
-      rosters[side].push(p.id);
-      pool.splice(pool.indexOf(p), 1);
+    // 蛇形轮选：A B C C B A A B C C B A
+    const rounds = CFG.teamSize - 1;
+    for (let r = 0; r < rounds; r++) {
+      const seq = r % 2 === 0 ? order.slice() : order.slice().reverse();
+      for (const teamId of seq) {
+        const p = Game.aiPick(state, pool, teams[teamId]);
+        if (!p) continue;
+        teams[teamId].push(p.id);
+        pool.splice(pool.indexOf(p), 1);
+      }
     }
-    return { pool, rosters };
+    state.lastDayTeams = teams;
+    return { pool, teams, order };
+  };
+
+  // 某天用什么分数制：周日抢 21，其余抢 7
+  Game.winScoreOf = function (state, dateStr) {
+    const d = dateStr || state.date;
+    return calendar.weekdayOf(d) === 0 ? CFG.sundayWinScore : CFG.winScore;
   };
 
   Game.playableOpponents = function (state) {
@@ -692,34 +719,107 @@
   };
 
   /**
-   * rosters = { T1: [id...], T2: [id...] }，每场临时组队，不写入球队档案
+   * 开始今天的一轮车轮战
+   * teams = { T1:[...], T2:[...], T3:[...] }，每队 teamSize 人
    */
-  Game.playMatch = function (state, opponentId, rosters) {
-    if (!rosters || !rosters.T1 || !rosters[opponentId]) return null;
-    const mine = rosters.T1.slice();
-    const theirs = rosters[opponentId].slice();
-    const need = CFG.picksPerTeam + 1;
-    if (mine.length !== need || theirs.length !== need) return null;
-    if (new Set(mine).size !== need || new Set(theirs).size !== need) return null;
-    if (mine.some(id => theirs.indexOf(id) >= 0)) return null;
-    if (mine.some(id => !state.players[id] || state.players[id].injury > 0)) return null;
-    if (theirs.some(id => !state.players[id] || state.players[id].injury > 0)) return null;
+  Game.startSession = function (state, teams) {
+    const ids = state.teams.map(t => t.id);
+    for (const id of ids) {
+      const roster = teams[id] || [];
+      if (roster.length !== CFG.teamSize) return null;
+      if (new Set(roster).size !== CFG.teamSize) return null;
+      if (roster.some(pid => !state.players[pid] || state.players[pid].injury > 0)) return null;
+    }
+    const all = ids.reduce((acc, id) => acc.concat(teams[id]), []);
+    if (new Set(all).size !== all.length) return null;
 
-    const result = simulateMatch(state, 'T1', opponentId, { rosters: { H: mine, A: theirs } });
+    // 大娘队先上，对手随机，第三队在场下等
+    const others = shuffle(ids.filter(id => id !== 'T1'));
+    state.session = {
+      date: state.date,
+      teams,
+      court: ['T1', others[0]],
+      waiting: others[1],
+      elapsed: 0,
+      limit: CFG.sessionMinutes,
+      target: Game.winScoreOf(state, state.date),
+      games: [],
+      finished: false
+    };
+    state.phase = 'session';
+    return state.session;
+  };
+
+  /**
+   * 打当前这一场：赢的留在场上，输的下场，场下那队上来
+   */
+  Game.sessionPlay = function (state) {
+    const s = state.session;
+    if (!s || s.finished) return null;
+    const [a, b] = s.court;
+    const rosters = { H: s.teams[a].slice(), A: s.teams[b].slice() };
+    const result = simulateMatch(state, a, b, {
+      rosters,
+      winScore: s.target
+    });
     if (!result) return null;
-    applyResult(state, result);
+
+    applyResult(state, result, { session: true });
     state.lastResult = result;
-    state.lastTeam = mine.slice();
-    const opp = Game.teamById(state, opponentId);
-    const win = result.winnerId === 'T1';
+    state.lastTeam = rosters.H.slice();
+
+    const loser = result.winnerId === a ? b : a;
+    const winner = result.winnerId;
+    const nextUp = s.waiting;
+    const game = {
+      no: s.games.length + 1,
+      homeId: a,
+      awayId: b,
+      scoreH: result.scoreH,
+      scoreA: result.scoreA,
+      winnerId: winner,
+      loserId: loser,
+      minutes: result.minutes
+    };
+    s.games.push(game);
+    s.elapsed += result.minutes;
+    s.waiting = loser;
+    s.court = [winner, nextUp];
+
+    if (s.elapsed >= s.limit) {
+      s.finished = true;
+    }
+    return { result, game, session: s };
+  };
+
+  /**
+   * 结束车轮战：结算当天、写日志、进入第二天
+   */
+  Game.endSession = function (state) {
+    const s = state.session;
+    if (!s) return null;
+    const humanGames = s.games.filter(g => g.homeId === 'T1' || g.awayId === 'T1');
+    const wins = humanGames.filter(g => g.winnerId === 'T1').length;
+    const losses = humanGames.length - wins;
     Game.log(
       state,
-      `大娘队 ${result.scoreH} : ${result.scoreA} ${opp.name}，${win ? '拿下胜利！' : '遗憾落败。'}`,
-      win ? 'win' : 'lose'
+      `车轮战 ${s.games.length} 场（${s.elapsed} 分钟），大娘队 ${wins} 胜 ${losses} 负。`,
+      wins >= losses ? 'win' : 'lose'
     );
-    Game.advance(state);
+    const summary = {
+      games: s.games.slice(),
+      elapsed: s.elapsed,
+      target: s.target,
+      wins,
+      losses,
+      humanGames
+    };
+    state.lastSession = summary;
+    state.session = null;
+    state.phase = 'season';
+    Game.advance(state, { skipAi: true });
     Game.save(state);
-    return result;
+    return summary;
   };
 
   Game.train = function (state, attr) {
@@ -782,19 +882,22 @@
 
     const info = calendar.dayInfo(state.date);
 
-    // AI 之间的比赛：两边各自临时组队
-    if (info.playable) {
+    // 玩家今天休息时，AI 两队自己打一场
+    if (info.playable && !opts.skipAi) {
       const aiTeams = state.teams.filter(t => !t.human);
-      if (aiTeams.length === 2 && Math.random() < CFG.aiMatchChance) {
-        const setup = Game.buildMatchSetup(state, aiTeams[0].id, aiTeams[1].id);
-        if (setup) {
-          const r = simulateMatch(state, aiTeams[0].id, aiTeams[1].id, { rosters: setup.rosters });
-          if (r) {
-            applyResult(state, r);
-            const t0 = Game.teamById(state, r.homeId).name;
-            const t1 = Game.teamById(state, r.awayId).name;
-            Game.log(state, `${t0} ${r.scoreH} : ${r.scoreA} ${t1}（AI 比赛）`, 'ai');
-          }
+      if (aiTeams.length >= 2 && Math.random() < CFG.aiMatchChance) {
+        const day = Game.buildDayTeams(state);
+        const a = aiTeams[0].id;
+        const b = aiTeams[1].id;
+        const r = simulateMatch(state, a, b, {
+          rosters: { H: day.teams[a], A: day.teams[b] },
+          winScore: Game.winScoreOf(state, state.date)
+        });
+        if (r) {
+          applyResult(state, r);
+          const t0 = Game.teamById(state, r.homeId).name;
+          const t1 = Game.teamById(state, r.awayId).name;
+          Game.log(state, `${t0} ${r.scoreH} : ${r.scoreA} ${t1}（AI 比赛）`, 'ai');
         }
       }
     }

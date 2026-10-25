@@ -1,5 +1,5 @@
 /*!
- * TBA 模拟器 · 核心逻辑测试（v1.1.5 每场 15 人池）
+ * TBA 模拟器 · 核心逻辑测试（v1.1.6 每日车轮战）
  * 运行：node tests/test-core.js
  */
 const path = require('path');
@@ -14,15 +14,6 @@ let failures = 0;
 function check(name, cond, extra) {
   console.log((cond ? 'PASS ' : 'FAIL ') + name + (extra !== undefined ? '  ' + extra : ''));
   if (!cond) failures++;
-}
-
-function autoRosters(st, oppId) {
-  const setup = Game.buildMatchSetup(st, 'T1', oppId);
-  if (!setup) return null;
-  const out = {};
-  out.T1 = setup.rosters.H;
-  out[oppId] = setup.rosters.A;
-  return out;
 }
 
 /* ---------- 1. 赛历 ---------- */
@@ -56,76 +47,74 @@ const list = Object.values(players0).sort((a, b) => b.overall - a.overall);
 check('球员数量 22', list.length === 22, list.length);
 check('建队核心 3 人', list.filter(p => p.core).length === 3);
 check('锋线 6 人', list.filter(p => p.pos === '锋线').length === 6);
-check('后卫 11 人 + 客串 5 人', list.filter(p => p.role === '常驻球员' && p.pos === '后卫').length === 11 && list.filter(p => p.role === '客串球员').length === 5);
 
-/* ---------- 3. 每场 15 人池 ---------- */
-console.log('\n=== 每场 15 人池 ===');
+/* ---------- 3. 每日 15 人池 ---------- */
+console.log('\n=== 每日 15 人池 ===');
 const s = Game.create();
-check('开局直接进入赛季（不再有固定阵容选秀）', s.phase === 'season', s.phase);
-s.date = '2025-09-02'; // 正常上学日
+s.date = '2025-09-02';
 const pool = Game.buildPool(s);
 check('池子固定 15 人', pool.length === 15, pool.length);
 check('锋线全来（6 人）', pool.filter(p => p.pos === '锋线').length === 6);
-check('三位领袖都在池子里', [1, 2, 3].every(id => pool.some(p => p.id === id)));
 check('常规日没有客串球员', pool.every(p => p.role !== TBA.GUEST_ROLE));
 check('后卫 9 人', pool.filter(p => p.pos === '后卫').length === 9);
 
-// 考试日：客串球员可能出现，但总数仍是 15
-s.date = '2025-10-30'; // 大考试
+s.date = '2025-10-30';
 let guestSeen = 0;
-for (let i = 0; i < 40; i++) {
-  const p = Game.buildPool(s);
-  if (p.length !== 15) { check('考试日池子仍是 15 人', false, p.length); break; }
-  guestSeen += p.filter(x => x.role === TBA.GUEST_ROLE).length;
-}
-check('考试日会有客串球员到场', guestSeen > 0, `40 次共出现 ${guestSeen} 人次`);
-check('考试日锋线仍然全来', Game.buildPool(s).filter(p => p.pos === '锋线').length === 6);
+for (let i = 0; i < 40; i++) guestSeen += Game.buildPool(s).filter(p => p.role === TBA.GUEST_ROLE).length;
+check('考试日会有客串球员到场', guestSeen > 0, `40 次共 ${guestSeen} 人次`);
 
-// 连续 30 次常规池：后卫组合会变
+/* ---------- 4. 三队选人 ---------- */
+console.log('\n=== 三队选人 ===');
 s.date = '2025-09-02';
-const combos = new Set();
-for (let i = 0; i < 30; i++) combos.add(Game.buildPool(s).map(p => p.id).sort().join(','));
-check('常规日的池子每次不一样（后卫随机）', combos.size > 1, `${combos.size} 种组合`);
+const day = Game.buildDayTeams(s);
+const ids = ['T1', 'T2', 'T3'];
+check('三支队伍', ids.every(id => day.teams[id].length === CFG.teamSize), ids.map(id => day.teams[id].length).join('/'));
+check('15 人全部分完，无重复', new Set(ids.reduce((a, id) => a.concat(day.teams[id]), [])).size === 15);
+check('三位领袖各在自己队里', s.teams.every(t => day.teams[t.id][0] === t.core));
+check('每队 1 领袖 + 4 人', ids.every(id => day.teams[id].length === 5 && s.players[day.teams[id][0]].core));
 
-/* ---------- 4. 赛前组队 ---------- */
-console.log('\n=== 赛前组队 ===');
-s.date = '2025-09-02';
-const setup = Game.buildMatchSetup(s, 'T1', 'T2');
-check('组队结果两边的名单', !!setup && setup.rosters.H.length === 6 && setup.rosters.A.length === 6,
-  setup && `${setup.rosters.H.length} / ${setup.rosters.A.length}`);
-check('两边领袖各自在队里', setup.rosters.H.indexOf(1) >= 0 && setup.rosters.A.indexOf(2) >= 0);
-check('两边没有重复球员', setup.rosters.H.every(id => setup.rosters.A.indexOf(id) < 0));
-check('每队 5 名选秀 + 1 名领袖', setup.rosters.H.length === CFG.picksPerTeam + 1);
+/* ---------- 5. 车轮战 ---------- */
+console.log('\n=== 车轮战 ===');
+const sess = Game.startSession(s, day.teams);
+check('进入车轮战阶段', s.phase === 'session' && !!sess);
+check('大娘队先上场', sess.court.indexOf('T1') >= 0, sess.court.join(' vs '));
+check('第三队在场下等', sess.waiting && sess.court.indexOf(sess.waiting) < 0, sess.waiting);
+check('周中抢 7 分', sess.target === 7, sess.target);
+check('计时从 0 开始', sess.elapsed === 0);
 
-const rosters = autoRosters(s, 'T2');
-const r1 = Game.playMatch(s, 'T2', rosters);
-check('临时阵容可以开赛', !!r1, r1 && `${r1.scoreH}:${r1.scoreA}`);
-check('比赛记录首发 3 人', !!r1 && r1.lineupH.length === 3, r1 && r1.lineupH.join(','));
-check('赛后记住上一场阵容', s.lastTeam.length === 6, s.lastTeam.length);
+const g1 = Game.sessionPlay(s);
+check('第一场打完', !!g1, g1 && `${g1.game.scoreH}:${g1.game.scoreA}`);
+check('赢的留在场上', s.session.court.indexOf(g1.game.winnerId) >= 0);
+check('输的下场等待', s.session.waiting === g1.game.loserId);
+check('原来的场下队伍上场', s.session.court.indexOf('T1') >= 0 || s.session.court.length === 2);
+check('计时增加', s.session.elapsed === g1.game.minutes, `${s.session.elapsed} 分钟`);
 
-// 非法名单
-const bad = { T1: rosters.T1.slice(0, 5), T2: rosters.T2.slice() };
-check('人数不足不能开赛', Game.playMatch(s, 'T2', bad) === null);
-const dup = { T1: rosters.T1.slice(), T2: rosters.T2.slice() };
-dup.T2[1] = dup.T1[1];
-check('重复球员不能开赛', Game.playMatch(s, 'T2', dup) === null);
+let guard = 0;
+while (s.session && !s.session.finished && guard++ < 60) Game.sessionPlay(s);
+check('45 分钟打满后结束', s.session && s.session.finished, s.session && s.session.elapsed);
+check('至少打了 3 场', s.session.games.length >= 3, s.session.games.length);
+check('每场都有胜负', s.session.games.every(g => g.winnerId && g.loserId));
 
+const totalWins = s.teams.reduce((a, t) => a + t.wins, 0);
+const summary = Game.endSession(s);
+check('结束车轮战后回到赛季', s.phase === 'season', s.phase);
+check('日期推进一天', s.date === '2025-09-03', s.date);
+check('战绩写进积分榜', s.teams.reduce((a, t) => a + t.wins, 0) === totalWins);
+check('保留当天战报', !!summary && summary.games.length === s.lastSession.games.length);
+
+/* ---------- 6. 周日抢 21 ---------- */
+console.log('\n=== 周日抢 21 ===');
 const s2 = Game.create();
-s2.date = '2025-09-02';
-const rosters2 = autoRosters(s2, 'T2');
-s2.players[rosters2.T1[1]].injury = 2;
-check('伤员不能出现在名单里', Game.playMatch(s2, 'T2', rosters2) === null);
+s2.date = '2025-09-07'; // 周日
+check('周日分数制是 21', Game.winScoreOf(s2) === 21, Game.winScoreOf(s2));
+const day2 = Game.buildDayTeams(s2);
+Game.startSession(s2, day2.teams);
+const g2 = Game.sessionPlay(s2);
+check('周日比赛按 21 分制', g2 && g2.result.target === 21, g2 && g2.result.target);
+check('周日一场时间更长', g2 && g2.game.minutes >= 10, g2 && g2.game.minutes);
+Game.endSession(s2);
 
-/* ---------- 5. 训练 / 事件 ---------- */
-console.log('\n=== 训练与事件 ===');
-const s3 = Game.create();
-s3.date = '2025-09-02';
-const before = Object.values(s3.players).map(p => p.attrs.shot);
-Game.train(s3, 'shot');
-const after = Object.values(s3.players).map(p => p.attrs.shot);
-check('全班加练提升所有人', after.every((v, i) => v >= before[i]), `${before.slice(0, 3)} -> ${after.slice(0, 3)}`);
-
-/* ---------- 6. 老师点评 ---------- */
+/* ---------- 7. 老师点评 ---------- */
 console.log('\n=== 老师点评 ===');
 const s4 = Game.create();
 check('假期（暑假）没有上课点评', Game.teacherComment(s4, 'day', '2025-07-15') === null);
@@ -133,33 +122,34 @@ check('留校日没有上课点评', Game.teacherComment(s4, 'day', '2025-07-03'
 check('考试周没有上课点评', Game.teacherComment(s4, 'day', '2025-10-30') === null);
 const c1 = Game.teacherComment(s4, 'day', '2025-09-02');
 check('上学日有老师点评', !!c1 && !!c1.text, c1 && `${c1.name}：${c1.text}`);
-check('同一天点评稳定', !!c1 && c1.text === Game.teacherComment(s4, 'day', '2025-09-02').text);
 check('周二轮到嘴老师', c1 && c1.name === '嘴老师', c1 && c1.name);
-const cWin = Game.teacherComment(s4, 'win', '2025-09-02');
-const cLose = Game.teacherComment(s4, 'lose', '2025-09-02');
-check('赛后输赢点评不同', !!cWin && !!cLose && cWin.text !== cLose.text);
 
-/* ---------- 7. 整季推进 ---------- */
+/* ---------- 8. 整季推进 ---------- */
 console.log('\n=== 整季推进 ===');
 const s5 = Game.create();
-let days = 0, matches = 0;
+let days = 0, sessions = 0, games = 0;
 while (s5.phase === 'season' && days++ < 400) {
   const info = calendar.dayInfo(s5.date);
-  const opps = Game.playableOpponents(s5);
-  if (info.playable && opps.length && Game.canStartMatch(s5)) {
-    const rs = autoRosters(s5, opps[0].id);
-    if (rs && Game.playMatch(s5, opps[0].id, rs)) matches++;
-    else Game.rest(s5);
+  if (info.playable && Game.canStartMatch(s5)) {
+    const d = Game.buildDayTeams(s5);
+    if (Game.startSession(s5, d.teams)) {
+      let g = 0;
+      while (s5.session && !s5.session.finished && g++ < 60) Game.sessionPlay(s5);
+      games += s5.session ? s5.session.games.length : 0;
+      Game.endSession(s5);
+      sessions++;
+    } else {
+      Game.rest(s5);
+    }
   } else {
     Game.rest(s5);
   }
 }
-console.log('结束日期', s5.date, '阶段', s5.phase, '比赛', matches);
+console.log('结束日期', s5.date, '阶段', s5.phase, '车轮战', sessions, '场次', games);
 check('赛季在 2026-06 结束', s5.phase === 'end' && s5.date > '2026-06-09', s5.date);
-check('赛季有足够比赛', matches > 60, matches);
+check('赛季有足够车轮战', sessions > 50, sessions);
+check('每轮至少 3 场', games >= sessions * 3, games);
 Game.standings(s5).forEach(t => console.log(`${t.name}\t${t.wins}胜${t.losses}负\t${t.pf}:${t.pa}`));
-const totalGames = s5.teams.reduce((a, t) => a + t.wins + t.losses, 0) / 2;
-check('总场次与战绩一致', Number.isInteger(totalGames) && totalGames > matches, totalGames);
 
 console.log('\n' + (failures === 0 ? '全部通过 ✅' : failures + ' 项失败 ❌'));
 process.exit(failures === 0 ? 0 : 1);

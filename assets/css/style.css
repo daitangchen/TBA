@@ -775,6 +775,36 @@ b, strong { font-weight: 700; }
   padding: 0 4px;
   white-space: nowrap;
 }
+.build-teams.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.build-teams.three .build-vs { display: none; }
+
+/* 车轮战进行中 */
+.session-clock { margin-bottom: 14px; }
+.sc-top { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+.sc-top b { color: var(--orange-2); font-family: var(--mono); }
+.sc-bar { height: 8px; border-radius: 5px; background: rgba(255, 255, 255, 0.06); overflow: hidden; }
+.sc-bar i { display: block; height: 100%; background: linear-gradient(90deg, var(--teal), var(--orange-2)); }
+.session-court { display: grid; grid-template-columns: 1fr auto 1fr; gap: 12px; align-items: start; }
+.session-team { border: 1px solid var(--line); border-radius: 12px; padding: 10px; background: rgba(255, 255, 255, 0.02); min-width: 0; }
+.session-team-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; gap: 8px; }
+.session-team-head b { font-size: 14px; }
+.session-team-head span { font-size: 10.5px; color: var(--dim); letter-spacing: 0.08em; }
+.session-player { display: flex; align-items: center; gap: 8px; padding: 4px 2px; font-size: 12px; border-bottom: 1px dashed rgba(255, 255, 255, 0.05); }
+.session-player:last-child { border-bottom: none; }
+.sp-ovr { font-family: var(--mono); color: var(--orange-2); font-weight: 700; width: 22px; flex: none; }
+.sp-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sp-pos { margin-left: auto; font-size: 10px; color: var(--dim); }
+.session-vs { align-self: center; font-family: var(--mono); color: var(--dim); font-size: 12px; }
+.session-waiting { margin-top: 12px; }
+.session-waiting .session-team { opacity: 0.75; }
+.session-results { margin-top: 14px; }
+.session-results h4 { font-size: 12px; letter-spacing: 0.12em; color: var(--muted); margin-bottom: 8px; }
+.session-log { display: flex; flex-direction: column; gap: 5px; max-height: 190px; overflow: auto; }
+.session-log li { display: flex; align-items: center; gap: 10px; font-size: 12.5px; padding: 5px 8px; border-radius: 8px; background: rgba(255, 255, 255, 0.02); }
+.sr-no { font-family: var(--mono); color: var(--dim); width: 18px; flex: none; }
+.sr-teams { flex: 1; min-width: 0; }
+.sr-teams b { color: var(--text); font-family: var(--mono); }
+.sr-min { color: var(--dim); font-size: 11px; font-family: var(--mono); }
 
 /* 老师点评 */
 .teacher-note {
@@ -907,6 +937,9 @@ b, strong { font-weight: 700; }
   .day-status { font-size: 11px; padding: 5px 10px; }
   .pick-grid { grid-template-columns: 1fr; }
   .build-teams { grid-template-columns: 1fr; }
+  .build-teams.three { grid-template-columns: 1fr; }
+  .session-court { grid-template-columns: 1fr; }
+  .session-vs { display: none; }
   .build-vs { text-align: center; }
   .calendar-panel { display: none; }
   .title-actions .btn { flex: 1; }

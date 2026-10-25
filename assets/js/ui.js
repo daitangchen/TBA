@@ -38,6 +38,7 @@
     if (st.phase === 'end') { show('screen-end'); renderEnd(); return; }
     show('screen-main');
     renderMain();
+    if (st.phase === 'session') openSession();
   }
 
   function openModal(html, opts) {
@@ -127,7 +128,7 @@
     $('#btn-continue').hidden = !has;
     $('#save-hint').textContent = has
       ? '检测到本地存档，可以继续上次的赛季。'
-      : '高三的第一场球，从到场的人里开始选。';
+      : '高三的第一场球，从今天到场的 15 人开始分三队。';
     const s = seasonStats();
     const strip = $('#season-strip');
     if (strip && !strip.dataset.ready) {
@@ -265,24 +266,22 @@
   function renderActions(st, info) {
     const el = $('#actions-panel');
     const canPlay = Game.canStartMatch(st);
-    const opponents = Game.playableOpponents(st);
     const rows = [];
 
     if (info.playable) {
+      const target = Game.winScoreOf(st, st.date);
       if (!canPlay) {
         rows.push(`<div class="action-row"><button class="action-btn" disabled>
           <span class="action-ico">🚑</span>
-          <span><span class="action-main">人不够</span><span class="action-sub">健康球员不足 12 人，先让大家恢复</span></span>
+          <span><span class="action-main">人不够</span><span class="action-sub">健康球员不足 15 人，先让大家恢复</span></span>
         </button></div>`);
       } else {
-        opponents.forEach(opp => {
-          rows.push(`<div class="action-row"><button class="action-btn" data-match="${opp.id}">
-            <span class="action-ico">🏀</span>
-            <span><span class="action-main">约战 ${esc(opp.name)}</span>
-            <span class="action-sub">${opp.wins} 胜 ${opp.losses} 负 · 现场 15 人组队 · 3v3</span></span>
-            <span class="action-arrow">›</span>
-          </button></div>`);
-        });
+        rows.push(`<div class="action-row"><button class="action-btn" data-session="1">
+          <span class="action-ico">🏀</span>
+          <span><span class="action-main">开始今日车轮战</span>
+          <span class="action-sub">先选人分三队 · 45 分钟 · 抢 ${target} 分${target >= 21 ? '（周日）' : ''}</span></span>
+          <span class="action-arrow">›</span>
+        </button></div>`);
       }
       rows.push(`<div class="action-row"><button class="action-btn" data-train="1">
         <span class="action-ico">🎯</span>
@@ -399,39 +398,34 @@
   }
 
   /* ============================================================
-   * 交互：比赛 / 训练 / 休息
+   * 每日车轮战：每天开始时先选人分三队，输的下场、赢的留场
    * ============================================================ */
-  /* ============================================================
-   * 赛前组队：每场从到场 15 人里轮流选 5 人
-   * ============================================================ */
-  function openTeamBuilder(oppId) {
+  function openDayBuilder() {
     const st = Game.state;
     const human = Game.humanTeam(st);
-    const opp = Game.teamById(st, oppId);
-    if (!human || !opp) return;
-
-    const info = Cal.dayInfo(st.date);
-    const exam = !!info.exam;
     const pool = Game.buildPool(st);
+    const info = Cal.dayInfo(st.date);
     const summary = Game.poolSummary(pool);
-    const leaders = [human.core, opp.core];
+    const teamIds = st.teams.map(t => t.id);
+    const leaders = st.teams.map(t => t.core);
     const candidates = pool.filter(p => leaders.indexOf(p.id) < 0);
 
-    if (candidates.length < CFG.picksPerTeam * 2) {
+    if (candidates.length < (CFG.teamSize - 1) * CFG.teamsPerDay) {
       openModal(`${modalHead('人到齐了吗？', '到场球员不足')}
-        <p class="muted">今天只来了 ${pool.length} 个人，凑不齐一场 3v3。先训练或者换一天吧。</p>
+        <p class="muted">今天只来了 ${pool.length} 个人，凑不齐三支 ${CFG.teamSize} 人队。先训练或者换一天吧。</p>
         <div class="modal-actions"><button class="btn btn-primary" data-close="1">知道了</button></div>`);
       return;
     }
 
-    const rosters = {};
-    rosters[human.id] = [human.core];
-    rosters[opp.id] = [opp.core];
+    const teams = {};
+    st.teams.forEach(t => { teams[t.id] = [t.core]; });
 
-    const first = Math.random() < 0.5 ? human.id : opp.id;
+    // 三队蛇形轮选：A B C C B A A B C ...
+    const order = TBA.utils.shuffle(teamIds);
     const turns = [];
-    for (let i = 0; i < CFG.picksPerTeam * 2; i++) {
-      turns.push(i % 2 === 0 ? first : (first === human.id ? opp.id : human.id));
+    for (let r = 0; r < CFG.teamSize - 1; r++) {
+      const seq = r % 2 === 0 ? order.slice() : order.slice().reverse();
+      seq.forEach(id => turns.push(id));
     }
     let turn = 0;
     const taken = new Set();
@@ -439,17 +433,20 @@
 
     const isHumanTurn = () => turns[turn] === human.id;
     const done = () => turn >= turns.length;
-    const picksOf = teamId => rosters[teamId].length - 1;
+    const nameOf = id => st.teams.find(t => t.id === id).name;
 
     const slotsHtml = teamId => {
-      const ids = rosters[teamId];
-      const leader = st.players[ids[0]];
-      const out = [`<div class="slot is-leader"><span class="slot-ovr">${leader.overall}</span><span class="slot-name">${esc(leader.name)}</span><em>领袖</em></div>`];
-      for (let i = 0; i < CFG.picksPerTeam; i++) {
-        const id = ids[i + 1];
+      const ids = teams[teamId];
+      const out = [];
+      for (let i = 0; i < CFG.teamSize; i++) {
+        const id = ids[i];
         if (id) {
           const p = st.players[id];
-          out.push(`<div class="slot is-filled"><span class="slot-ovr">${p.overall}</span><span class="slot-name">${esc(p.name)}</span><em>${p.pos === '锋线' ? '锋' : '卫'}</em></div>`);
+          out.push(`<div class="slot ${p.core ? 'is-leader' : 'is-filled'}">
+            <span class="slot-ovr">${p.overall}</span>
+            <span class="slot-name">${esc(p.name)}</span>
+            <em>${p.core ? '领袖' : (p.pos === '锋线' ? '锋' : '卫')}</em>
+          </div>`);
         } else {
           out.push('<div class="slot is-empty"><span>待选</span></div>');
         }
@@ -472,63 +469,58 @@
     const renderBody = () => {
       const modal = document.querySelector('#modal-root .modal');
       if (!modal) return;
-      modal.querySelector('#slots-human').innerHTML = slotsHtml(human.id);
-      modal.querySelector('#slots-ai').innerHTML = slotsHtml(opp.id);
+      teamIds.forEach(id => {
+        const el = modal.querySelector(`#slots-${id}`);
+        if (el) el.innerHTML = slotsHtml(id);
+      });
       const remain = pool.filter(p => !taken.has(p.id) && leaders.indexOf(p.id) < 0);
       modal.querySelector('#pool-count').textContent = `还剩 ${remain.length} 人可选`;
       modal.querySelector('#pool-grid').innerHTML = remain.map(cardHtml).join('');
-
       const turnEl = modal.querySelector('#build-turn');
-      if (done()) turnEl.innerHTML = '<b class="is-ready">双方阵容已满，可以开球</b>';
-      else if (isHumanTurn()) turnEl.innerHTML = `轮到你选人 <b>还差 ${CFG.picksPerTeam - picksOf(human.id)} 人</b>`;
-      else turnEl.innerHTML = `${esc(opp.name)} 选择中…`;
-
-      const btn = modal.querySelector('#btn-start-match');
+      if (done()) turnEl.innerHTML = '<b class="is-ready">三队分好，开始车轮战</b>';
+      else if (isHumanTurn()) turnEl.innerHTML = `轮到你选人 <b>还差 ${CFG.teamSize - teams[human.id].length} 人</b>`;
+      else turnEl.innerHTML = `${esc(nameOf(turns[turn]))} 选择中…`;
+      const btn = modal.querySelector('#btn-start-session');
       btn.disabled = !done();
-      btn.textContent = done() ? '开球' : (isHumanTurn() ? `还差 ${CFG.picksPerTeam - picksOf(human.id)} 人` : '等待对方选人…');
+      btn.textContent = done() ? '开始车轮战' : '选人中…';
     };
 
     const aiStep = () => {
       if (done()) return;
-      if (turns[turn] !== opp.id) return;
+      const teamId = turns[turn];
+      if (teamId === human.id) return;
       busy = true;
       renderBody();
       setTimeout(() => {
         const remain = pool.filter(p => !taken.has(p.id) && leaders.indexOf(p.id) < 0);
-        const pick = Game.aiPick(st, remain, rosters[opp.id]);
-        if (pick) {
-          rosters[opp.id].push(pick.id);
-          taken.add(pick.id);
-          turn++;
-        }
+        const pick = Game.aiPick(st, remain, teams[teamId]);
+        if (pick) { teams[teamId].push(pick.id); taken.add(pick.id); turn++; }
         busy = false;
         renderBody();
         if (!done() && turns[turn] !== human.id) aiStep();
-      }, 520);
+      }, 420);
     };
 
-    openModal(`${modalHead('赛前组队', `${Cal.labelDate(st.date)} · 3v3 · 先到 21 分`)}
+    const teamBlocks = teamIds.map(id => {
+      const t = st.teams.find(x => x.id === id);
+      return `<div class="build-team">
+        <div class="build-team-head"><b>${esc(t.name)}</b>${t.human ? '<span class="chip chip-live">你的队伍</span>' : ''}</div>
+        <div class="build-slots" id="slots-${id}"></div>
+      </div>`;
+    }).join('');
+
+    openModal(`${modalHead('今日车轮战 · 选人分三队', `${Cal.labelDate(st.date)} · 45 分钟 · 抢 ${Game.winScoreOf(st, st.date)} 分`)}
       <div class="build-meta">
-        <span class="chip ${exam ? 'chip-exam' : 'chip-school'}">${exam ? '考试期间 · 客串球员到场' : '常规到场'}</span>
-        <span class="muted">今天来了 ${summary.total} 人：锋线 ${summary.forwards} · 后卫 ${summary.guards}${summary.guests ? `（含客串 ${summary.guests}）` : ''}</span>
+        <span class="chip ${info.exam ? 'chip-exam' : 'chip-school'}">${info.exam ? '考试期间 · 客串球员到场' : '常规到场'}</span>
+        <span class="muted">今天来了 ${summary.total} 人：锋线 ${summary.forwards} · 后卫 ${summary.guards}${summary.guests ? `（含客串 ${summary.guests}）` : ''}；三队蛇形轮选</span>
       </div>
-      <div class="build-teams">
-        <div class="build-team">
-          <div class="build-team-head"><b>${esc(human.name)}</b><span class="chip chip-live">你 · ${first === human.id ? '先选' : '后选'}</span></div>
-          <div class="build-slots" id="slots-human"></div>
-        </div>
-        <div class="build-vs">VS</div>
-        <div class="build-team">
-          <div class="build-team-head"><b>${esc(opp.name)}</b><span class="muted">${first === opp.id ? '先选' : '后选'}</span></div>
-          <div class="build-slots" id="slots-ai"></div>
-        </div>
-      </div>
+      <div class="build-teams three">${teamBlocks}</div>
       <div class="build-turn" id="build-turn"></div>
       <div class="pool-head"><h3 class="panel-title">现场球员 <span class="muted" id="pool-count"></span></h3></div>
       <div class="pick-grid" id="pool-grid"></div>
       <div class="modal-actions is-sticky">
         <button class="btn btn-ghost" data-close="1">取消</button>
-        <button class="btn btn-primary" id="btn-start-match" disabled>还差 ${CFG.picksPerTeam} 人</button>
+        <button class="btn btn-primary" id="btn-start-session" disabled>选人中…</button>
       </div>`, { wide: true });
 
     const modal = document.querySelector('#modal-root .modal');
@@ -539,81 +531,137 @@
       if (!card || card.disabled || busy || done() || !isHumanTurn()) return;
       const id = Number(card.dataset.pool);
       if (taken.has(id) || leaders.indexOf(id) >= 0) return;
-      rosters[human.id].push(id);
+      teams[human.id].push(id);
       taken.add(id);
       turn++;
       renderBody();
-      if (!done() && turns[turn] === opp.id) aiStep();
+      if (!done() && turns[turn] !== human.id) aiStep();
     });
 
     modal.addEventListener('click', e => {
-      if (!e.target.closest('#btn-start-match')) return;
-      if (!done()) return;
-      const payload = {};
-      payload[human.id] = rosters[human.id];
-      payload[opp.id] = rosters[opp.id];
-      const result = Game.playMatch(st, oppId, payload);
-      if (!result) { closeModal(); render(); return; }
-      showResult(result);
+      if (!e.target.closest('#btn-start-session') || !done()) return;
+      const session = Game.startSession(st, teams);
+      if (!session) return;
+      Game.save(st);
+      openSession();
     });
 
     renderBody();
-    if (turns[turn] === opp.id) aiStep();
+    if (turns[turn] !== human.id) aiStep();
   }
 
-  function showResult(result) {
+  /* ---------------- 车轮战进行中 ---------------- */
+  function sessionTeamBlock(st, teamId, tag) {
+    const t = Game.teamById(st, teamId);
+    const ids = (st.session && st.session.teams[teamId]) || [];
+    return `<div class="session-team">
+      <div class="session-team-head"><b>${esc(t.name)}</b><span>${esc(tag)}</span></div>
+      ${ids.map(id => {
+        const p = st.players[id];
+        return `<div class="session-player"><span class="sp-ovr">${p.overall}</span><span class="sp-name">${esc(p.name)}</span><span class="sp-pos">${p.pos}</span></div>`;
+      }).join('')}
+    </div>`;
+  }
+
+  function openSession() {
     const st = Game.state;
-    const home = Game.teamById(st, result.homeId);
-    const away = Game.teamById(st, result.awayId);
-    const humanWin = result.winnerId === 'T1';
-    const matchComment = Game.teacherComment(st, humanWin ? 'win' : 'lose', result.date);
-    const showComment = matchComment && matchComment.isSchool;
+    const s = st.session;
+    if (!s) return;
 
-    const table = (team, rows) => `
-      <div>
-        <div style="display:flex;gap:8px;align-items:baseline;margin-bottom:6px">
-          <b style="font-size:13px">${esc(team.name)}</b>
-          <span class="muted" style="font-size:11px">${result.homeId === team.id ? '主队' : '客队'}</span>
-        </div>
-        <table class="box-table">
-          <thead><tr><th>球员</th><th>分</th><th>板</th><th>助</th></tr></thead>
-          <tbody>
-            ${rows.map(r => `<tr class="${result.mvp.id === r.id ? 'is-mvp' : ''}">
-              <td>${esc(r.name)}</td><td>${r.pts}</td><td>${r.reb}</td><td>${r.ast}</td>
-            </tr>`).join('')}
-          </tbody>
-        </table>
-      </div>`;
-
-    openModal(`${modalHead(humanWin ? '比赛结束 · 胜利' : '比赛结束', `${result.date} · ${esc(home.name)} vs ${esc(away.name)}`)}
-      <div class="scoreboard">
-        <div class="sb-team">
-          <div class="sb-name ${humanWin ? 'sb-win' : 'sb-lose'}">${esc(home.name)}</div>
-          <div class="sb-sub">${home.wins} 胜 ${home.losses} 负</div>
-        </div>
-        <div>
-          <div class="sb-score"><span class="${humanWin ? 'sb-win' : ''}">${result.scoreH}</span> : <span class="${humanWin ? '' : 'sb-win'}">${result.scoreA}</span></div>
-        </div>
-        <div class="sb-team">
-          <div class="sb-name ${humanWin ? 'sb-lose' : 'sb-win'}">${esc(away.name)}</div>
-          <div class="sb-sub">${away.wins} 胜 ${away.losses} 负</div>
-        </div>
+    openModal(`
+      <div class="modal-head">
+        <div><h3>今日车轮战</h3><p>${Cal.labelDate(st.date)} · 45 分钟 · 抢 ${s.target} 分${s.target >= 21 ? '（周日）' : ''}</p></div>
       </div>
-      <div style="text-align:center;margin-top:10px"><span class="sb-tag">本场 MVP · ${esc(result.mvp.name)}（${result.mvp.pts} 分 ${result.mvp.reb} 板）</span></div>
-      ${showComment ? teacherNoteHtml(matchComment, true) : ''}
-      <div class="box-grid">
-        ${table(home, result.boxH)}
-        ${table(away, result.boxA)}
-      </div>
-      <div class="play-log">
-        ${result.plays.map(p => `<div><span class="score">${p.score}</span><span>${esc(p.text)}</span></div>`).join('')}
-      </div>
+      <div id="session-body"></div>
       <div class="modal-actions is-sticky">
-        <button class="btn btn-primary" id="btn-result-close">继续</button>
+        <button class="btn btn-primary" id="btn-session-play">开打</button>
+        <button class="btn btn-ghost" id="btn-session-auto">自动打完</button>
+        <button class="btn btn-primary" id="btn-session-end" hidden>结束今天</button>
       </div>`, { wide: true, onClose: render });
 
-    Game.save(st);
-    $('#btn-result-close').addEventListener('click', () => { closeModal(); render(); });
+    const modal = document.querySelector('#modal-root .modal');
+    if (!modal) return;
+
+    const paint = () => {
+      const body = modal.querySelector('#session-body');
+      if (!body) return;
+      const [a, b] = s.court;
+      const pct = Math.min(100, Math.round(s.elapsed / s.limit * 100));
+      const results = s.games.slice().reverse().map(g => {
+        const w = Game.teamById(st, g.winnerId);
+        const l = Game.teamById(st, g.loserId);
+        return `<li><span class="sr-no">${g.no}</span><span class="sr-teams">${esc(w.name)} <b>${Math.max(g.scoreH, g.scoreA)}:${Math.min(g.scoreH, g.scoreA)}</b> ${esc(l.name)}</span><span class="sr-min">${g.minutes}′</span></li>`;
+      }).join('');
+
+      body.innerHTML = `
+        <div class="session-clock">
+          <div class="sc-top"><span>已打 <b>${s.elapsed}</b> / ${s.limit} 分钟</span><span>${s.games.length} 场 · ${s.finished ? '时间到' : '继续'}</span></div>
+          <div class="sc-bar"><i style="width:${pct}%"></i></div>
+        </div>
+        <div class="session-court">
+          ${sessionTeamBlock(st, a, '场上')}
+          <div class="session-vs">VS</div>
+          ${sessionTeamBlock(st, b, '场上')}
+        </div>
+        <div class="session-waiting">${sessionTeamBlock(st, s.waiting, '场下等待 · 输的一方下场后上场')}</div>
+        <div class="session-results">
+          <h4>本场战报</h4>
+          <ul class="session-log">${results || '<li class="muted">还没有开打</li>'}</ul>
+        </div>`;
+
+      const play = modal.querySelector('#btn-session-play');
+      const auto = modal.querySelector('#btn-session-auto');
+      const end = modal.querySelector('#btn-session-end');
+      play.hidden = s.finished;
+      auto.hidden = s.finished;
+      end.hidden = !s.finished;
+      play.textContent = `开打第 ${s.games.length + 1} 场`;
+    };
+
+    const finish = () => {
+      const summary = Game.endSession(st);
+      closeModal();
+      render();
+      if (summary) openSessionSummary(summary);
+    };
+
+    modal.addEventListener('click', e => {
+      if (e.target.closest('#btn-session-play')) {
+        if (!st.session || st.session.finished) return;
+        Game.sessionPlay(st);
+        Game.save(st);
+        paint();
+        return;
+      }
+      if (e.target.closest('#btn-session-auto')) {
+        const step = () => {
+          if (!st.session || st.session.finished) { paint(); return; }
+          Game.sessionPlay(st);
+          Game.save(st);
+          paint();
+          if (st.session && !st.session.finished) setTimeout(step, 320);
+        };
+        step();
+        return;
+      }
+      if (e.target.closest('#btn-session-end')) finish();
+    });
+
+    paint();
+  }
+
+  function openSessionSummary(summary) {
+    const st = Game.state;
+    const rows = summary.games.map(g => {
+      const w = Game.teamById(st, g.winnerId);
+      const l = Game.teamById(st, g.loserId);
+      return `<div class="recent-row is-mine"><span class="recent-date">${g.no}</span>
+        <span class="recent-teams">${esc(w.name)} <b>${Math.max(g.scoreH, g.scoreA)} : ${Math.min(g.scoreH, g.scoreA)}</b> ${esc(l.name)}</span>
+        <span class="muted">${g.minutes}′</span></div>`;
+    }).join('');
+    openModal(`${modalHead('车轮战结束', `${summary.elapsed} 分钟 · ${summary.games.length} 场 · 大娘队 ${summary.wins} 胜 ${summary.losses} 负`)}
+      <div class="recent-list">${rows}</div>
+      <div class="modal-actions is-sticky"><button class="btn btn-primary" data-close="1">收工</button></div>`, { wide: true });
   }
 
   function openTraining() {
@@ -664,20 +712,21 @@
           <li>小考试 3 天、大考试 6 天：<strong>考试期间每天晚上都能打球</strong>，而且客串球员只在这时出现。</li>
         </ul>
         <img class="rules-img" src="rules.png" alt="联盟规则原图" />
-        <h4>二、每场临时组队（本轮重点）</h4>
+        <h4>二、每日车轮战（本轮重点）</h4>
         <ul>
-          <li>没有固定阵容：<strong>每场比赛前，两位领袖都要重新从到场的人里选人</strong>。</li>
-          <li>每次到场固定 <strong>15 人</strong>（含领袖）：锋线全来，后卫随机来，客串球员只在考试期间出现。</li>
-          <li>两位领袖轮流选人，每人选 5 人，加上自己共 6 人；选满才能开球。</li>
-          <li>3v3、先到 21 分且领先 2 分；6 人里自动排 3 人首发，其余轮换。</li>
-          <li>建队核心：大娘、奶龙、走刀，三人都是锋线，领袖不会受伤。</li>
+          <li><strong>每天一开始先选人</strong>：到场的 15 人分成三支球队，每队 5 人（领袖 + 4 人），三队蛇形轮选。</li>
+          <li>选完就开始车轮战：<strong>两方先打，输的一方下场，场下那队上来，赢的留在场上</strong>，一直打到 45 分钟用完为止。</li>
+          <li>分数制：<strong>平日抢 7 分，周日抢 21 分</strong>，先到目标分的一方获胜。</li>
+          <li>每队 5 人里自动排 3 人首发，领袖必定首发；单场时间按攻防回合折算。</li>
+          <li>到场规则：锋线全来，后卫随机来，客串球员只在考试期间出现，总数固定 15 人。</li>
+          <li>比赛记录照常计入积分榜；建队核心不会受伤。</li>
           <li>交易市场：暂未实现，排在后续版本计划里。</li>
         </ul>
         <h4>三、比赛与养成</h4>
         <ul>
           <li>球员属性由身高、体重、位置和名字稳定生成，特性来自「球场特性」列。</li>
-          <li>体力低于 28 时继续上场有受伤风险，伤员不会出现在下一次的到场名单里。</li>
-          <li>「全班加练」会提升所有健康球员，比赛日只能做一件事：约战、加练或休息。</li>
+          <li>车轮战里每场消耗体力，打满 45 分钟后统一结算；体力低于 28 时有受伤风险，伤员不会出现在下一次的到场名单里。</li>
+          <li>「全班加练」会提升所有健康球员；比赛日只能做一件事：车轮战、加练或休息。</li>
         </ul>
         <h4>四、老师点评</h4>
         <p>正常上学的非考试日，按星期会有一位老师点评球队；赛后结算里还会补一句输赢不同的点评。</p>
@@ -784,10 +833,9 @@
 
     // 主界面
     document.addEventListener('click', e => {
-      const match = e.target.closest('[data-match]');
-      if (match) {
+      if (e.target.closest('[data-session]')) {
         if (e.target.closest('#modal-root')) return;
-        openTeamBuilder(match.dataset.match);
+        openDayBuilder();
         return;
       }
       if (e.target.closest('[data-train]')) { openTraining(); return; }
@@ -858,22 +906,13 @@
     bind();
     renderTitle();
 
-    // 演示模式：?demo=main / ?demo=team / ?demo=match / ?demo=school / ?demo=end
+    // 演示模式：?demo=main / ?demo=team / ?demo=session / ?demo=school / ?demo=end
     try {
       const params = new URLSearchParams(global.location.search);
       const demo = params.get('demo');
       if (demo) {
         Game.create();
         const st = Game.state;
-
-        const autoRosters = oppId => {
-          const setup = Game.buildMatchSetup(st, 'T1', oppId);
-          if (!setup) return null;
-          const r = {};
-          r.T1 = setup.rosters.H;
-          r[oppId] = setup.rosters.A;
-          return r;
-        };
 
         const skipToPlayable = () => {
           Game.skip(st);
@@ -891,6 +930,14 @@
           }
         };
 
+        const playTodaySession = () => {
+          const day = Game.buildDayTeams(st);
+          if (!Game.startSession(st, day.teams)) return null;
+          let guard = 0;
+          while (st.session && !st.session.finished && guard++ < 40) Game.sessionPlay(st);
+          return Game.endSession(st);
+        };
+
         if (demo === 'school') {
           skipToSchool(true);
           Game.save(st);
@@ -898,23 +945,30 @@
           return;
         }
 
-        if (demo === 'team' || demo === 'lineup') {
+        if (demo === 'team') {
           skipToPlayable();
           Game.save(st);
           render();
-          const opps = Game.playableOpponents(st);
-          if (opps.length) openTeamBuilder(opps[0].id);
+          openDayBuilder();
           return;
         }
 
-        if (demo === 'match' || demo === 'schoolmatch') {
-          if (demo === 'schoolmatch') skipToSchool(true); else skipToPlayable();
-          const opps = Game.playableOpponents(st);
-          const rosters = opps.length ? autoRosters(opps[0].id) : null;
-          const result = rosters ? Game.playMatch(st, opps[0].id, rosters) : null;
+        if (demo === 'session') {
+          skipToPlayable();
+          const day = Game.buildDayTeams(st);
+          Game.startSession(st, day.teams);
+          Game.sessionPlay(st);
+          Game.sessionPlay(st);
           Game.save(st);
           render();
-          if (result) showResult(result);
+          return;
+        }
+
+        if (demo === 'schoolmatch') {
+          skipToSchool(true);
+          playTodaySession();
+          Game.save(st);
+          render();
           return;
         }
 
@@ -922,11 +976,9 @@
           let guard = 0;
           while (st.phase === 'season' && guard++ < 400) {
             const info = Cal.dayInfo(st.date);
-            const opps = Game.playableOpponents(st);
-            if (info.playable && opps.length) {
-              const rosters = autoRosters(opps[0].id);
-              if (rosters) Game.playMatch(st, opps[0].id, rosters);
-              else Game.rest(st);
+            if (info.playable && Game.canStartMatch(st)) {
+              const summary = playTodaySession();
+              if (!summary) Game.rest(st);
             } else {
               Game.rest(st);
             }
@@ -942,11 +994,7 @@
 
         if (demo === 'main') {
           skipToPlayable();
-          const opps = Game.playableOpponents(st);
-          if (opps.length) {
-            const rosters = autoRosters(opps[0].id);
-            if (rosters) Game.playMatch(st, opps[0].id, rosters);
-          }
+          playTodaySession();
           skipToPlayable();
           Game.save(st);
           render();
